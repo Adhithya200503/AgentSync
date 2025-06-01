@@ -97,9 +97,7 @@ export const redirectLink = async (req, res) => {
       "";
 
     // Handle localhost IPs (for testing)
-    if (ip === "::1" || ip === "127.0.0.1") {
-      ip = "8.8.8.8"; // example public IP for testing
-    }
+     
 
     // Get geolocation info from ipwho.is
     const geoRes = await fetch(`https://ipwho.is/${ip}`);
