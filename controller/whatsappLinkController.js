@@ -67,9 +67,9 @@ export const createLink = async (req, res) => {
   }
 
   await db.collection("links").doc(finalDocId).set(urlData);
-
+  const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   res.json({
-    shortUrl: `https://5f52-27-5-87-159.ngrok-free.app/${finalDocId}`,
+    shortUrl: `${baseUrl}/${finalDocId}`,
     uploadedData: urlData,
   });
 };
