@@ -15,9 +15,8 @@ export const createLink = async (req, res) => {
   }
   const fullPhoneNumber = `${countryCode}${phone}`;
   const code = uuidv4().slice(0, 6);
-  const waUrl = `https://wa.me/${fullPhoneNumber}?text=${encodeURIComponent(message || "")}`;
+  const waUrl= `https://api.whatsapp.com/send?phone=${fullPhoneNumber}&text=${encodeURIComponent(message || "")}`
   const base64DataUrl = await QRCode.toDataURL(waUrl);
-
   const expiryDuration = calculateExpiry(duration);
   const now = Timestamp.now();
   const expiresAt =
