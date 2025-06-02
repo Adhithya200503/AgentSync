@@ -54,25 +54,54 @@ export const createShortUrl = async (req, res) => {
 };
 
 
+
+
 export const redirectShortUrl = async (req, res) => {
   const { shortId } = req.params;
   if (!shortId) {
     return res.status(400).send("Missing shortId");
   }
+
   const docRef = db.collection("short-links").doc(shortId);
   const doc = await docRef.get();
+
   if (!doc.exists) {
     return res.status(404).send("Short link not found");
   }
+
   const data = doc.data();
+
   if (!data.isActive) {
     return res.status(410).send("Link is no longer active");
   }
 
-  await docRef.update({
-    clicks: admin.firestore.FieldValue.increment(1),
-  });
+  let ip =
+    req.headers["x-forwarded-for"]?.split(",")[0] ||
+    req.socket.remoteAddress ||
+    "";
 
+  const geoRes = await fetch(`https://ipwho.is/${ip}`);
+  const geoData = await geoRes.json();
+
+  if (!geoData.success) {
+    console.log("Geo lookup failed", geoData.message);
+  }
+
+  const country = geoData.country || "Unknown";
+  const city = geoData.city || "Unknown";
+
+  const updateData = {
+    clicks: admin.firestore.FieldValue.increment(1),
+  };
+
+  // Dynamically create paths for updating country and city counts
+  const countryPath = `stats.${country}.count`;
+  const cityPath = `stats.${country}.cities.${city}`;
+
+  updateData[countryPath] = admin.firestore.FieldValue.increment(1);
+  updateData[cityPath] = admin.firestore.FieldValue.increment(1);
+
+  await docRef.update(updateData);
 
   return res.redirect(data.originalUrl);
 };
