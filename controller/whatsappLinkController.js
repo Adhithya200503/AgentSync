@@ -6,16 +6,16 @@ import calculateExpiry from "../functions/getExpiryDurationCalculator.js";
 
 
 export const createLink = async (req, res) => {
-  const { phone, message, duration, customDomain } = req.body;
+  const { countryCode, phone, message, duration, customDomain } = req.body;
   const user = req.user;
 
   // Validate phone number
   if (!phone || !/^\d+$/.test(phone)) {
     return res.status(400).json({ error: "Invalid phone number" });
   }
-
+  const fullPhoneNumber = `${countryCode}${phone}`;
   const code = uuidv4().slice(0, 6);
-  const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message || "")}`;
+  const waUrl = `https://wa.me/${fullPhoneNumber}?text=${encodeURIComponent(message || "")}`;
   const base64DataUrl = await QRCode.toDataURL(waUrl);
 
   const expiryDuration = calculateExpiry(duration);
