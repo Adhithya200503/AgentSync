@@ -120,13 +120,69 @@ export const getLinkPageByUsername = async (req, res) => {
       const currentData = docSnap.data();
       const newPageClicks = (currentData.pageClicks || 0) + 1;
 
-      transaction.update(docRef, { pageClicks: newPageClicks });
+      const stats = currentData.stats || [];
+      const overallCount = (currentData.count || 0) + 1;
+
+      let ip =
+        req.headers["x-forwarded-for"]?.split(",")[0] ||
+        req.socket.remoteAddress ||
+        "";
+
+      if (ip === '::1' || ip === '127.0.0.1') {
+        ip = '8.8.8.8';
+      }
+
+      const geoRes = await fetch(`https://ipwho.is/${ip}`);
+      const geoData = await geoRes.json();
+
+      let country = "Unknown";
+      let city = "Unknown";
+
+      if (!geoData.success) {
+        console.log("Geo lookup failed", geoData.message);
+      } else {
+        country = geoData.country || "Unknown";
+        city = geoData.city || "Unknown";
+      }
+
+      const countryIndex = stats.findIndex(
+        (c) => c.country.toLowerCase() === country.toLowerCase()
+      );
+
+      if (countryIndex > -1) {
+        stats[countryIndex].count += 1;
+
+        const cityIndex = stats[countryIndex].topCities.findIndex(
+          (c) => c.city.toLowerCase() === city.toLowerCase()
+        );
+
+        if (cityIndex > -1) {
+          stats[countryIndex].topCities[cityIndex].count += 1;
+        } else {
+          stats[countryIndex].topCities.push({ city, count: 1 });
+        }
+
+        stats[countryIndex].topCities.sort((a, b) => b.count - a.count);
+        stats[countryIndex].topCities = stats[countryIndex].topCities.slice(0, 3);
+      } else {
+        stats.push({
+          country,
+          count: 1,
+          topCities: [{ city, count: 1 }],
+        });
+      }
+
+      transaction.update(docRef, {
+        pageClicks: newPageClicks,
+        stats: stats,
+        count: overallCount,
+      });
 
       return {
         status: 200,
         data: {
           success: true,
-          data: { ...currentData, pageClicks: newPageClicks },
+          data: { ...currentData, pageClicks: newPageClicks, stats: stats, count: overallCount },
         },
       };
     });
