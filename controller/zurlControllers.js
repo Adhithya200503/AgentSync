@@ -3,7 +3,6 @@ import { Timestamp } from "firebase-admin/firestore";
 import { v4 as uuidv4 } from "uuid";
 import admin, { db } from "../utils/firebase.js";
 
-
 export const createShortUrl = async (req, res) => {
   const user = req.user;
 
@@ -46,6 +45,8 @@ export const createShortUrl = async (req, res) => {
     createdAt: new Date().toISOString(),
     customUrl: customUrl || "",
     isActive: true,
+    protected:false,
+    unLockId:uuidv4()
   };
 
   await docRef.set(data);
@@ -75,6 +76,13 @@ export const redirectShortUrl = async (req, res) => {
     return res.status(410).send("Link is no longer active");
   }
 
+  
+  if (data.protected) {
+    const baseUrl = "https://agentsync-5ab53.web.app/zurl"
+    return res.redirect(`${baseUrl}/unlock/${shortId}`);
+  }
+
+
   let ip =
     req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.socket.remoteAddress ||
@@ -94,10 +102,8 @@ export const redirectShortUrl = async (req, res) => {
     clicks: admin.firestore.FieldValue.increment(1),
   };
 
-  // Dynamically create paths for updating country and city counts
   const countryPath = `stats.${country}.count`;
   const cityPath = `stats.${country}.cities.${city}`;
-
   updateData[countryPath] = admin.firestore.FieldValue.increment(1);
   updateData[cityPath] = admin.firestore.FieldValue.increment(1);
 
