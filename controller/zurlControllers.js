@@ -15,7 +15,7 @@ export const createShortUrl = async (req, res) => {
     }
   };
 
-  const { originalUrl, customUrl } = req.body;
+  const { originalUrl, customUrl, protected: isProtected } = req.body; // Destructure 'protected' as 'isProtected' to avoid conflict
 
   if (!originalUrl || !isValidUrl(originalUrl)) {
     return res.status(400).json({ error: 'Invalid or missing originalUrl' });
@@ -45,15 +45,18 @@ export const createShortUrl = async (req, res) => {
     createdAt: new Date().toISOString(),
     customUrl: customUrl || "",
     isActive: true,
-    protected:false,
-    unLockId:uuidv4()
+    protected: isProtected || false, // Store the protected status
+    unLockId: isProtected ? uuidv4() : null // Only generate unLockId if protected
   };
 
   await docRef.set(data);
 
-  return res.status(201).json({ shortId: slug, qrcode: qrCodeDataURL });
+  return res.status(201).json({
+    shortId: slug,
+    qrcode: qrCodeDataURL,
+    unLockId: isProtected ? data.unLockId : undefined // Only return unLockId if protected
+  });
 };
-
 
 
 
