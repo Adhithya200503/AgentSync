@@ -3,7 +3,7 @@ import admin, { db } from "../utils/firebase.js";
 export const createOrUpdateLinkPage = async (req, res) => {
   try {
     const uid = req.user.uid;
-    const { username, bio = '', profilePic = '', links = [] } = req.body;
+    const { username, bio = '', profilePic = '', links = [] , template} = req.body;
 
     // Validate username
     if (!username || typeof username !== 'string' || username.trim() === '') {
@@ -91,6 +91,7 @@ export const createOrUpdateLinkPage = async (req, res) => {
       createdAt: linkPageSnap.exists ? linkPageSnap.data().createdAt : new Date(),
       updatedAt: new Date(),
       linkPageUrl,
+      template
     }, { merge: true });
 
     res.status(200).json({ success: true, message: 'Link page saved successfully.', linkPageUrl });
