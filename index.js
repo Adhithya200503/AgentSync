@@ -17,7 +17,7 @@ app.use(express.json())
 
 app.use(cors({
   origin: ['http://localhost:5173', 'https://d98b-27-5-87-159.ngrok-free.app','https://agentsync-5ab53.web.app'],
-  methods: ['GET', 'POST', 'DELETE', 'PATCH'],
+  methods: ['GET', 'POST', 'DELETE', 'PATCH','PUT'],
   credentials: true
 }));
 const PORT = process.env.PORT || 3000;
