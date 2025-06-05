@@ -25,6 +25,7 @@ app.get("/", authenticateToken, (req, res) => {
   return res.json({ message: "hello world" })
 })
 app.get("/portfolio/:portfolioId", getPortfolio);
+app.put("/portfolio/:portfolioId", getPortfolio);
 app.get("/Zurl/:shortId",redirectShortUrl);
 app.get('/link-page/:username', getLinkPageByUsername);
 app.get("/:code", redirectLink);
