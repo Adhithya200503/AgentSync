@@ -2,7 +2,7 @@ import { db } from "../utils/firebase.js";
 
 
 export const createPortFolio = async (req, res) => {
-  const userId = req.user;
+  const userId = req.user.user_id;
   try {
     const {
       name,
