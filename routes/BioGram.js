@@ -3,6 +3,6 @@ import { createPortFolio, editPortFolio } from "../controller/skillVaultControll
 const router = express.Router();
 
 router.post('/create-portfolio',createPortFolio);
-router.patch('/portfolio/:id',editPortFolio);
+router.put('/portfolio/:id',editPortFolio);
 
 export default router;
