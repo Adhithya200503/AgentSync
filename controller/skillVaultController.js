@@ -69,7 +69,7 @@ export const createPortFolio = async (req, res) => {
 
 export const editPortFolio = async (req, res) => {
   try {
-    const { id } = req.params; // Portfolio document ID
+    const { id } = req.params; 
     const {
       name,
       age,

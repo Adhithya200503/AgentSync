@@ -1,9 +1,8 @@
 import express from "express"
-import { createPortFolio } from "../controller/skillVaultController.js";
+import { createPortFolio, editPortFolio } from "../controller/skillVaultController.js";
 const router = express.Router();
 
 router.post('/create-portfolio',createPortFolio);
-
-
+router.patch('/portfolio/:id',editPortFolio);
 
 export default router;
