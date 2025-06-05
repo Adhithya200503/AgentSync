@@ -9,6 +9,7 @@ export const createPortFolio = async (req, res) => {
       age,
       phoneNumber,
       email,
+      profileImg,
       socialMediaLinks,
       city,
       country,
@@ -34,6 +35,7 @@ export const createPortFolio = async (req, res) => {
       name,
       age: age || null,
       phoneNumber,
+      profileImg,
       email,
       socialMediaLinks: Array.isArray(socialMediaLinks) ? socialMediaLinks : [],
       city: city || "",
@@ -71,6 +73,7 @@ export const editPortFolio = async (req, res) => {
     const {
       name,
       age,
+      profileImg,
       phoneNumber,
       email,
       socialMediaLinks,
@@ -92,6 +95,7 @@ export const editPortFolio = async (req, res) => {
 
     const updateData = {
       ...(name && { name }),
+      ...(profileImg && { profileImg }),
       ...(age !== undefined && { age }),
       ...(phoneNumber && { phoneNumber }),
       ...(email && { email }),
