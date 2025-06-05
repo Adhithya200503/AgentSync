@@ -127,3 +127,26 @@ export const editPortFolio = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error." });
   }
 };
+
+
+export const getPortfolio = async (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+
+    if (!portfolioId) {
+      return res.status(400).json({ success: false, message: "Missing portfolio ID." });
+    }
+
+    const docRef = db.collection("portfolios").doc(portfolioId);
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) {
+      return res.status(404).json({ success: false, message: "Portfolio not found." });
+    }
+
+    res.status(200).json({ success: true, data: docSnap.data() });
+  } catch (error) {
+    console.error("Error fetching portfolio:", error);
+    res.status(500).json({ success: false, message: "Server error." });
+  }
+};

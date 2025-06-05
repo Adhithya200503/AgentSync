@@ -10,6 +10,7 @@ import { redirectShortUrl } from "./controller/zurlControllers.js";
 import ZapLinkRoutes from "./routes/ZapLinkRoutes.js"
 import { getLinkPageByUsername } from "./controller/zapLinkControllers.js";
 import BioGramRoutes from "./routes/BioGram.js"
+import { getPortfolio } from "./controller/skillVaultController.js"
 dotenv.config();
 const app = express();
 app.use(express.json())
@@ -23,6 +24,7 @@ const PORT = process.env.PORT || 3000;
 app.get("/", authenticateToken, (req, res) => {
   return res.json({ message: "hello world" })
 })
+app.get("/portfolio/:portfolioId", getPortfolio);
 app.get("/Zurl/:shortId",redirectShortUrl);
 app.get('/link-page/:username', getLinkPageByUsername);
 app.get("/:code", redirectLink);
