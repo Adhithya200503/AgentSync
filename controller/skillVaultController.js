@@ -67,9 +67,18 @@ export const createPortFolio = async (req, res) => {
 
 
 
+
+
 export const editPortFolio = async (req, res) => {
+ 
+  if (!req.user || !req.user.user_id) {
+    return res.status(401).json({ success: false, message: "Unauthorized: User not authenticated." });
+  }
+
+  const user_id = req.user.user_id; 
+
   try {
-    const { id } = req.params; 
+    const { id } = req.params;
     const {
       name,
       age,
@@ -93,17 +102,34 @@ export const editPortFolio = async (req, res) => {
       return res.status(400).json({ success: false, message: "Portfolio ID is required." });
     }
 
+    const portfolioRef = db.collection("portfolios").doc(id);
+    const doc = await portfolioRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ success: false, message: "Portfolio not found." });
+    }
+
+    
+    const portfolioOwnerId = doc.data().userId;
+
+    
+    if (user_id !== portfolioOwnerId) {
+      // If they don't match, deny access
+      return res.status(403).json({ success: false, message: "Forbidden: You are not the creator of this portfolio." });
+    }
+
+
     const updateData = {
-      ...(name && { name }),
-      ...(profileImg && { profileImg }),
+      ...(name !== undefined && { name }), // Use !== undefined for potentially empty strings or null
+      ...(profileImg !== undefined && { profileImg }),
       ...(age !== undefined && { age }),
-      ...(phoneNumber && { phoneNumber }),
-      ...(email && { email }),
-      ...(domain && { domain }),
-      ...(profession && { profession }),
-      ...(city && { city }),
-      ...(country && { country }),
-      ...(description && { description }),
+      ...(phoneNumber !== undefined && { phoneNumber }),
+      ...(email !== undefined && { email }),
+      ...(domain !== undefined && { domain }),
+      ...(profession !== undefined && { profession }),
+      ...(city !== undefined && { city }),
+      ...(country !== undefined && { country }),
+      ...(description !== undefined && { description }),
       ...(Array.isArray(socialMediaLinks) && { socialMediaLinks }),
       ...(Array.isArray(achievements) && { achievements }),
       ...(Array.isArray(certificates) && { certificates }),
@@ -113,12 +139,12 @@ export const editPortFolio = async (req, res) => {
       updatedAt: new Date()
     };
 
-    const portfolioRef = db.collection("portfolios").doc(id);
-    const doc = await portfolioRef.get();
-
-    if (!doc.exists) {
-      return res.status(404).json({ success: false, message: "Portfolio not found." });
+   
+    if (req.body.userId && req.body.userId !== user_id) {
+        return res.status(403).json({ success: false, message: "Forbidden: Cannot change portfolio ownership." });
     }
+  
+    updateData.userId = user_id; 
 
     await portfolioRef.update(updateData);
 
@@ -128,10 +154,9 @@ export const editPortFolio = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating portfolio:", error);
-    res.status(500).json({ success: false, message: "Server error." });
+    res.status(500).json({ success: false, message: "Server error: " + error.message });
   }
 };
-
 
 export const getPortfolio = async (req, res) => {
   try {
