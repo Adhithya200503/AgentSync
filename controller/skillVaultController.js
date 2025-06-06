@@ -57,6 +57,7 @@ export const createPortFolio = async (req, res) => {
       success: true,
       message: "Portfolio created successfully.",
       id: docRef.id,
+      url:`https://agentsync-5ab53.web.app/portfolio/${docRef.id}`
     });
   } catch (error) {
     console.error("Error creating portfolio:", error);
