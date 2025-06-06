@@ -52,12 +52,13 @@ export const createPortFolio = async (req, res) => {
     };
 
     const docRef = await db.collection("portfolios").add(portfolioData);
-
+    const url = `https://agentsync-5ab53.web.app/portfolio/${docId}`;
+    await docRef.update({ url });
     res.status(200).json({
       success: true,
       message: "Portfolio created successfully.",
       id: docRef.id,
-      url:`https://agentsync-5ab53.web.app/portfolio/${docRef.id}`
+      url
     });
   } catch (error) {
     console.error("Error creating portfolio:", error);
@@ -71,12 +72,12 @@ export const createPortFolio = async (req, res) => {
 
 
 export const editPortFolio = async (req, res) => {
- 
+
   if (!req.user || !req.user.user_id) {
     return res.status(401).json({ success: false, message: "Unauthorized: User not authenticated." });
   }
 
-  const user_id = req.user.user_id; 
+  const user_id = req.user.user_id;
 
   try {
     const { id } = req.params;
@@ -110,10 +111,10 @@ export const editPortFolio = async (req, res) => {
       return res.status(404).json({ success: false, message: "Portfolio not found." });
     }
 
-    
+
     const portfolioOwnerId = doc.data().userId;
 
-    
+
     if (user_id !== portfolioOwnerId) {
       // If they don't match, deny access
       return res.status(403).json({ success: false, message: "Forbidden: You are not the creator of this portfolio." });
@@ -140,12 +141,12 @@ export const editPortFolio = async (req, res) => {
       updatedAt: new Date()
     };
 
-   
+
     if (req.body.userId && req.body.userId !== user_id) {
-        return res.status(403).json({ success: false, message: "Forbidden: Cannot change portfolio ownership." });
+      return res.status(403).json({ success: false, message: "Forbidden: Cannot change portfolio ownership." });
     }
-  
-    updateData.userId = user_id; 
+
+    updateData.userId = user_id;
 
     await portfolioRef.update(updateData);
 
