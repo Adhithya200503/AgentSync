@@ -52,7 +52,7 @@ export const createPortFolio = async (req, res) => {
     };
 
     const docRef = await db.collection("portfolios").add(portfolioData);
-    const url = `https://agentsync-5ab53.web.app/portfolio/${docId}`;
+    const url = `https://agentsync-5ab53.web.app/portfolio/${docRef.id}`;
     await docRef.update({ url });
     res.status(200).json({
       success: true,
