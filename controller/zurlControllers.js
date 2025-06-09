@@ -2,7 +2,7 @@ import QRCode from "qrcode";
 import { Timestamp } from "firebase-admin/firestore";
 import { v4 as uuidv4 } from "uuid";
 import admin, { db } from "../utils/firebase.js";
-
+import {UAParser} from "ua-parser-js"; 
 export const createShortUrl = async (req, res) => {
   const user = req.user;
 
@@ -79,36 +79,37 @@ export const redirectShortUrl = async (req, res) => {
     return res.status(410).send("Link is no longer active");
   }
 
-  
   if (data.protected) {
-    const baseUrl = "https://agentsync-5ab53.web.app/zurl"
+    const baseUrl = "https://agentsync-5ab53.web.app/zurl";
     return res.redirect(`${baseUrl}/unlock/${shortId}`);
   }
 
-
+  // Get IP address
   let ip =
     req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.socket.remoteAddress ||
     "";
 
+  // Geo info
   const geoRes = await fetch(`https://ipwho.is/${ip}`);
   const geoData = await geoRes.json();
+  const country = geoData.success ? geoData.country : "Unknown";
+  const city = geoData.success ? geoData.city : "Unknown";
 
-  if (!geoData.success) {
-    console.log("Geo lookup failed", geoData.message);
-  }
-
-  const country = geoData.country || "Unknown";
-  const city = geoData.city || "Unknown";
+  // Device/browser info
+  const parser = new UAParser(req.headers["user-agent"]);
+  const browserName = parser.getBrowser().name || "Unknown";
+  const deviceType = parser.getDevice().type || "desktop";  
+  const osName = parser.getOS().name || "Unknown";
 
   const updateData = {
     clicks: admin.firestore.FieldValue.increment(1),
+    [`stats.${country}.count`]: admin.firestore.FieldValue.increment(1),
+    [`stats.${country}.cities.${city}`]: admin.firestore.FieldValue.increment(1),
+    [`deviceStats.${deviceType}`]: admin.firestore.FieldValue.increment(1),
+    [`browserStats.${browserName}`]: admin.firestore.FieldValue.increment(1),
+    [`osStats.${osName}`]: admin.firestore.FieldValue.increment(1),
   };
-
-  const countryPath = `stats.${country}.count`;
-  const cityPath = `stats.${country}.cities.${city}`;
-  updateData[countryPath] = admin.firestore.FieldValue.increment(1);
-  updateData[cityPath] = admin.firestore.FieldValue.increment(1);
 
   await docRef.update(updateData);
 
