@@ -78,7 +78,8 @@ export const createShortUrl = async (req, res) => {
     stats: {},
     deviceStats: {},
     browserStats: {},
-    osStats: {}
+    osStats: {},
+    folderId:null
   };
 
   await docRef.set(data);
