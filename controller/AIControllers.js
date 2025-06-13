@@ -44,7 +44,6 @@ export const generatePost = async (req, res) => {
     browser = await puppeteer.launch({
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: puppeteer.executablePath(),
     });
 
     const page = await browser.newPage();
