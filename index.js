@@ -11,6 +11,7 @@ import ZapLinkRoutes from "./routes/ZapLinkRoutes.js"
 import { getLinkPageByUsername } from "./controller/zapLinkControllers.js";
 import BioGramRoutes from "./routes/BioGram.js"
 import { getPortfolio } from "./controller/skillVaultController.js"
+import aiRoutes from "./routes/AIRoutes.js"
 dotenv.config();
 const app = express();
 app.use(express.json())
@@ -32,5 +33,6 @@ app.use("/whatsapp", authenticateToken, WhatsAppLinkRoutes)
 app.use("/zurl", authenticateToken ,  ZurlRoutes);
 app.use("/zapLink",authenticateToken,ZapLinkRoutes);
 app.use("/bio-gram",authenticateToken,BioGramRoutes)
+app.use("/ai",authenticateToken ,aiRoutes);
 
 app.listen(3000, () => console.log(`server running successfully on port ${PORT} `))
