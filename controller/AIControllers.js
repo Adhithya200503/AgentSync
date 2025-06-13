@@ -1,6 +1,5 @@
 import { InferenceClient } from "@huggingface/inference";
 import * as cheerio from 'cheerio';
-import puppeteer from "puppeteer";
 
 export const generateAIBio = async (req, res) => {
   const { aiBioQuestion } = req.body;
@@ -38,22 +37,16 @@ export const generatePost = async (req, res) => {
   const { url, socialMediaPlatform } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
-
-  let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.cacheDir + '/chrome/linux-137.0.7151.70/chrome-linux64/chrome',
-    });
+   
+    const response = await fetch(url, { timeout: 30000 }); 
+    if (!response.ok) {
+      
+      return res.status(response.status).json({ error: `Failed to fetch URL: ${response.statusText}` });
+    }
+    const html = await response.text();
+    
 
-    const page = await browser.newPage();
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/90 Safari/537.36'
-    );
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-
-    const html = await page.content();
     const $ = cheerio.load(html);
 
     const title = $('meta[property="og:title"]').attr('content') || $('title').text();
@@ -83,7 +76,6 @@ export const generatePost = async (req, res) => {
   } catch (err) {
     console.error('Error generating post:', err.message);
     res.status(500).json({ error: 'Failed to process URL or generate post' });
-  } finally {
-    if (browser) await browser.close();
   }
+
 };
