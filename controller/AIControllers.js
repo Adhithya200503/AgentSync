@@ -9,7 +9,7 @@ export const generateAIBio = async (req, res) => {
   if (!aiBioQuestion) {
     return res.status(400).json({ error: "Missing aiBioQuestion in request body" });
   }
-
+  console.log(process.env.HF_API_KEY)
   const inferenceClient = new InferenceClient(process.env.HF_API_KEY);
 
   try {
