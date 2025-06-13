@@ -33,6 +33,6 @@ app.use("/whatsapp", authenticateToken, WhatsAppLinkRoutes)
 app.use("/zurl", authenticateToken ,  ZurlRoutes);
 app.use("/zapLink",authenticateToken,ZapLinkRoutes);
 app.use("/bio-gram",authenticateToken,BioGramRoutes)
-app.use("/ai",authenticateToken ,aiRoutes);
+app.use("/ai",aiRoutes);
 
 app.listen(3000, () => console.log(`server running successfully on port ${PORT} `))
