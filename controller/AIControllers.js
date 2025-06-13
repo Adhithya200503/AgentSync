@@ -1,7 +1,6 @@
 import { InferenceClient } from "@huggingface/inference";
 import * as cheerio from 'cheerio';
-import puppeteer from 'puppeteer-core';
-import chromium from 'chrome-aws-lambda';
+import puppeteer from "puppeteer";
 
 export const generateAIBio = async (req, res) => {
   const { aiBioQuestion } = req.body;
@@ -37,54 +36,35 @@ export const generateAIBio = async (req, res) => {
 
 export const generatePost = async (req, res) => {
   const { url, socialMediaPlatform } = req.body;
-
-  if (!url) {
-    return res.status(400).json({ error: 'URL is required' });
-  }
+  if (!url) return res.status(400).json({ error: 'URL is required' });
 
   let browser;
 
   try {
-    // Launch Puppeteer with chrome-aws-lambda
     browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath || '/usr/bin/chromium-browser',
-      headless: chromium.headless,
-      defaultViewport: chromium.defaultViewport,
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
     const page = await browser.newPage();
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/90 Safari/537.36'
     );
-
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
     const html = await page.content();
     const $ = cheerio.load(html);
 
-    const title =
-      $('meta[property="og:title"]').attr('content')?.trim() ||
-      $('title').text()?.trim() ||
-      '';
-
+    const title = $('meta[property="og:title"]').attr('content') || $('title').text();
     let description =
-      $('meta[name="description"]').attr('content')?.trim() ||
-      $('meta[property="og:description"]').attr('content')?.trim() ||
-      $('p').first().text().trim();
+      $('meta[name="description"]').attr('content') ||
+      $('meta[property="og:description"]').attr('content') ||
+      $('p').first().text().slice(0, 300);
 
-    if (description.length > 300) {
-      description = description.slice(0, 300) + '...';
-    }
+    const image = $('meta[property="og:image"]').attr('content') || $('img').first().attr('src');
 
-    const image =
-      $('meta[property="og:image"]').attr('content') ||
-      $('img').first().attr('src') ||
-      '';
-
-    if (!title && !description) {
+    if (!title && !description)
       return res.status(400).json({ error: 'No meaningful content found in the URL' });
-    }
 
     const prompt = `Create a short, catchy social media post based on this content:\n\nTitle: ${title}\nDescription: ${description}\nLink: ${url}\n\nAdd relevant hashtags and emojis for ${socialMediaPlatform}.`;
 
@@ -98,12 +78,7 @@ export const generatePost = async (req, res) => {
     const generatedPost = result.choices[0]?.message?.content || 'No content generated.';
     const cleanGeneratedPost = generatedPost.replace(/<think>.*?<\/think>/s, '').trim();
 
-    res.json({
-      title,
-      description,
-      image,
-      cleanGeneratedPost,
-    });
+    res.json({ title, description, image, cleanGeneratedPost });
   } catch (err) {
     console.error('Error generating post:', err.message);
     res.status(500).json({ error: 'Failed to process URL or generate post' });
