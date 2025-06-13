@@ -38,12 +38,13 @@ export const generatePost = async (req, res) => {
   const { url, socialMediaPlatform } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
-  let browser;
 
+  let browser;
   try {
     browser = await puppeteer.launch({
-      headless: true,
+      headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      executablePath: '/opt/render/.cache/puppeteer/chrome/linux-137.0.7151.70/chrome-linux64/chrome'
     });
 
     const page = await browser.newPage();
