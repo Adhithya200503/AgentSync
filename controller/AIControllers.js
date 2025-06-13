@@ -1,7 +1,4 @@
 import { InferenceClient } from "@huggingface/inference";
-import dotenv from "dotenv";
-
-dotenv.config(); 
 
 export const generateAIBio = async (req, res) => {
   const { aiBioQuestion } = req.body;
