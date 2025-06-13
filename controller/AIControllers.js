@@ -1,8 +1,7 @@
 import { InferenceClient } from "@huggingface/inference";
-import puppeteer from 'puppeteer';
-import axios from 'axios';
 import * as cheerio from 'cheerio';
-
+import puppeteer from 'puppeteer-core';
+import chromium from 'chrome-aws-lambda';
 
 export const generateAIBio = async (req, res) => {
   const { aiBioQuestion } = req.body;
@@ -37,7 +36,7 @@ export const generateAIBio = async (req, res) => {
 
 
 export const generatePost = async (req, res) => {
-  const { url , socialMediaPlatform } = req.body;
+  const { url, socialMediaPlatform } = req.body;
 
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
@@ -46,40 +45,38 @@ export const generatePost = async (req, res) => {
   let browser;
 
   try {
-    // Launch Puppeteer
+    // Launch Puppeteer with chrome-aws-lambda
     browser = await puppeteer.launch({
-      headless: 'new', // 'true' if deploying on server
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: chromium.args,
+      executablePath: await chromium.executablePath || '/usr/bin/chromium-browser',
+      headless: chromium.headless,
+      defaultViewport: chromium.defaultViewport,
     });
 
     const page = await browser.newPage();
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/90 Safari/537.36'
     );
+
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
     const html = await page.content();
     const $ = cheerio.load(html);
 
-    // Extract title
     const title =
       $('meta[property="og:title"]').attr('content')?.trim() ||
       $('title').text()?.trim() ||
       '';
 
-    // Extract description with fallback
     let description =
       $('meta[name="description"]').attr('content')?.trim() ||
-      $('meta[property="og:description"]').attr('content')?.trim();
+      $('meta[property="og:description"]').attr('content')?.trim() ||
+      $('p').first().text().trim();
 
-    if (!description) {
-      description = $('p').first().text().trim();
-      if (description.length > 300) {
-        description = description.slice(0, 300) + '...';
-      }
+    if (description.length > 300) {
+      description = description.slice(0, 300) + '...';
     }
 
-    // Extract image
     const image =
       $('meta[property="og:image"]').attr('content') ||
       $('img').first().attr('src') ||
@@ -89,23 +86,18 @@ export const generatePost = async (req, res) => {
       return res.status(400).json({ error: 'No meaningful content found in the URL' });
     }
 
-    // Prepare DeepSeek prompt
     const prompt = `Create a short, catchy social media post based on this content:\n\nTitle: ${title}\nDescription: ${description}\nLink: ${url}\n\nAdd relevant hashtags and emojis for ${socialMediaPlatform}.`;
+
     const inferenceClient = new InferenceClient(process.env.HF_API_KEY);
-    // DeepSeek API call
-      const result = await inferenceClient.chatCompletion({
-      provider: "novita",
-      model: "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
-      messages: [
-        {
-          role: "user",
-          content:prompt,
-        },
-      ],
+    const result = await inferenceClient.chatCompletion({
+      provider: 'novita',
+      model: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
+      messages: [{ role: 'user', content: prompt }],
     });
 
-    const generatedPost = result.choices[0].message.content || 'No content generated.';
-    const cleanGeneratedPost = generatedPost.replace(/<think>.*?<\/think>/s, "").trim();
+    const generatedPost = result.choices[0]?.message?.content || 'No content generated.';
+    const cleanGeneratedPost = generatedPost.replace(/<think>.*?<\/think>/s, '').trim();
+
     res.json({
       title,
       description,
