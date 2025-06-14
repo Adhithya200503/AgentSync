@@ -87,11 +87,10 @@ export const generatePost = async (req, res) => {
 
     // ✨ Split cleanGeneratedPost into an array of posts (using regex)
     const posts = cleanGeneratedPost
-      .split(/\n?\s*\d+\.\s+/) // split by numbered list like "1. "
+      .split(/(?:\*\*\d\.\*\*|\d\.)\s*/g)
       .map(p => p.trim())
-      .filter(Boolean); // remove empty items
-
-    res.json({ title, description, image, cleanGeneratedPost, posts });
+      .filter(Boolean);
+    res.json({ title, description, image,  posts });
   } catch (err) {
     console.error("Error generating post:", err.message);
     res.status(500).json({ error: "Failed to process URL or generate post" });
