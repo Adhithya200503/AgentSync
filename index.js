@@ -12,10 +12,13 @@ import { getLinkPageByUsername } from "./controller/zapLinkControllers.js";
 import BioGramRoutes from "./routes/BioGram.js"
 import { getPortfolio } from "./controller/skillVaultController.js"
 import aiRoutes from "./routes/AIRoutes.js"
+import ZapStoreRoutes from "./routes/ZapStoreRoutes.js";
+import fileUpload from 'express-fileupload';
+import { getProduct, getZapStoreById } from "./controller/ZapStoreControllers.js"
 dotenv.config();
 const app = express();
-app.use(express.json())
 
+app.use(fileUpload({ useTempFiles: true, tempFileDir: "/tmp/" }));
 app.use(cors({
   origin: ['http://localhost:5173', 'https://d98b-27-5-87-159.ngrok-free.app','https://agentsync-5ab53.web.app'],
   methods: ['GET', 'POST', 'DELETE', 'PATCH','PUT'],
@@ -26,6 +29,9 @@ app.get("/", authenticateToken, (req, res) => {
   return res.json({ message: "hello world" })
 })
 app.get("/portfolio/:portfolioId", getPortfolio);
+app.get("/zap-store/stores/:storeId",getZapStoreById)
+app.get("zap-store/products/:storeId")
+app.get("/zap-store/products/:productId",getProduct);
 app.get("/Zurl/:shortId",redirectShortUrl);
 app.get('/link-page/:username', getLinkPageByUsername);
 app.get("/:code", redirectLink);
@@ -33,6 +39,7 @@ app.use("/whatsapp", authenticateToken, WhatsAppLinkRoutes)
 app.use("/zurl", authenticateToken ,  ZurlRoutes);
 app.use("/zapLink",authenticateToken,ZapLinkRoutes);
 app.use("/bio-gram",authenticateToken,BioGramRoutes)
-app.use("/ai",aiRoutes);
+app.use("/zap-store",authenticateToken,ZapStoreRoutes);
+app.use("/ai",authenticateToken,aiRoutes);
 
 app.listen(3000, () => console.log(`server running successfully on port ${PORT} `))

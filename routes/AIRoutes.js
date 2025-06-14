@@ -5,6 +5,4 @@ const router = express.Router();
 
 router.post("/generate-bio", generateAIBio);
 router.post("/generate-post",generatePost);
-
-
 export default router
