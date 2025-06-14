@@ -33,17 +33,12 @@ export const generateAIBio = async (req, res) => {
 };
 
 
-
 export const generatePost = async (req, res) => {
   const { url, socialMediaPlatform } = req.body;
   if (!url) return res.status(400).json({ error: "URL is required" });
 
-  // Optional Turndown init
-  // const turndownService = new TurndownService();
-
   try {
     const response = await fetch(url, { timeout: 30000 });
-
     if (!response.ok) {
       return res
         .status(response.status)
@@ -65,13 +60,6 @@ export const generatePost = async (req, res) => {
     const image =
       $('meta[property="og:image"]').attr("content") ||
       $("img").first().attr("src");
-
-    // Optional: extract main content and convert to markdown
-    // const articleHtml = $("article").html() || $("main").html() || "";
-    // if (articleHtml) {
-    //   const articleMarkdown = turndownService.turndown(articleHtml);
-    //   description = articleMarkdown.slice(0, 500);
-    // }
 
     if (!title && !description)
       return res
@@ -97,7 +85,13 @@ export const generatePost = async (req, res) => {
     const rawPost = result.choices[0]?.message?.content || "No content generated.";
     const cleanGeneratedPost = rawPost.replace(/<think>.*?<\/think>/s, "").trim();
 
-    res.json({ title, description, image, cleanGeneratedPost });
+    // ✨ Split cleanGeneratedPost into an array of posts (using regex)
+    const posts = cleanGeneratedPost
+      .split(/\n?\s*\d+\.\s+/) // split by numbered list like "1. "
+      .map(p => p.trim())
+      .filter(Boolean); // remove empty items
+
+    res.json({ title, description, image, cleanGeneratedPost, posts });
   } catch (err) {
     console.error("Error generating post:", err.message);
     res.status(500).json({ error: "Failed to process URL or generate post" });
