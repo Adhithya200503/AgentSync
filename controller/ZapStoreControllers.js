@@ -187,8 +187,8 @@ export const createZapStore = async (req, res) => {
 
     const docRef = await db.collection("zapStores").add(storeData);
     await docRef.update({ storeId: docRef.id });
-
-    res.status(201).json({ message: "Store created successfully", storeId: docRef.id , storeData });
+    storeData = {...storeData,storeId:docRef.id};
+    res.status(201).json({ message: "Store created successfully", storeData });
 
   } catch (error) {
     console.error("Error creating store:", error);
