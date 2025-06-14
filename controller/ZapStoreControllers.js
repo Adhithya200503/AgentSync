@@ -174,7 +174,7 @@ export const createZapStore = async (req, res) => {
       logoId = result.public_id;
     }
 
-    const storeData = {
+    let storeData = {
       storeName,
       bio,
       address: JSON.parse(address),
