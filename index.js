@@ -23,7 +23,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'DELETE', 'PATCH','PUT'],
   credentials: true
 }));
-
+app.use(express.json());
 app.use(fileUpload({ useTempFiles: true, tempFileDir: "/tmp/" }));
 
 const PORT = process.env.PORT || 3000;
