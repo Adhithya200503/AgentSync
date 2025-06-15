@@ -17,7 +17,7 @@ export const addProduct = async (req, res) => {
       folder: `products/${userId}`,
     });
 
-    const product = {
+    let product = {
       name,
       description,
       price: parseFloat(price),
@@ -31,8 +31,8 @@ export const addProduct = async (req, res) => {
 
     const docRef = await db.collection("zapProducts").add(product);
     await docRef.update({ productId: docRef.id });
-
-    res.status(200).json({ productId: docRef.id, message: "Product added successfully" });
+    product = {...product,productId:docRef.id};
+    res.status(200).json({ productId: docRef.id, message: "Product added successfully" ,product});
 
   } catch (error) {
     console.error("Error adding product:", error);

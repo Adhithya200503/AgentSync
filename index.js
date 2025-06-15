@@ -31,7 +31,6 @@ app.get("/", authenticateToken, (req, res) => {
 app.get("/portfolio/:portfolioId", getPortfolio);
 app.get("/zap-store/stores/:storeId",getZapStoreById)
 app.get("/zap-store/store/products/:storeId",getProductsByStoreId)
-app.get("zap-store/products/:storeId")
 app.get("/zap-store/products/:productId",getProduct);
 app.get("/Zurl/:shortId",redirectShortUrl);
 app.get('/link-page/:username', getLinkPageByUsername);
