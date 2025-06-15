@@ -17,17 +17,16 @@ export const addProduct = async (req, res) => {
     price,
     category,
     stock = 0,
-    imageGallery = [],
     discountPercentage = 0,
     storeId,
     flashSale = false,
   } = req.body;
 
   const image = req.files?.image;
-
+  const galleryFiles =  req.files?.imageGallery;
 
   if (!name || !description || !price || !category || !image || !storeId) {
-    return res.status(400).json({ error: "All fields including image must be filled" });
+    return res.status(400).json({ error: "All required fields including image must be filled" });
   }
 
   if (!ALLOWED_CATEGORIES.includes(category)) {
@@ -35,10 +34,33 @@ export const addProduct = async (req, res) => {
   }
 
   try {
+    
     const result = await cloudinary.uploader.upload(image.tempFilePath, {
       folder: `products/${userId}`,
     });
 
+
+    let uploadedGallery = [];
+
+    if (galleryFiles) {
+      const filesArray = Array.isArray(galleryFiles) ? galleryFiles : [galleryFiles];
+
+      if (filesArray.length > 3) {
+        return res.status(400).json({ error: "Maximum 3 gallery images allowed" });
+      }
+
+      for (const file of filesArray) {
+        const uploadRes = await cloudinary.uploader.upload(file.tempFilePath, {
+          folder: `products/${userId}/gallery`,
+        });
+        uploadedGallery.push({
+          url: uploadRes.secure_url,
+          public_id: uploadRes.public_id,
+        });
+      }
+    }
+
+  
     let product = {
       name,
       description,
@@ -49,10 +71,10 @@ export const addProduct = async (req, res) => {
       category,
       stock: parseInt(stock),
       discountPercentage: parseFloat(discountPercentage),
-      imageGallery: Array.isArray(imageGallery) ? imageGallery : [],
+      imageGallery: uploadedGallery,
       storeId,
       flashSale: flashSale === 'true' || flashSale === true,
-      createdAt:admin.firestore.Timestamp.now(),
+      createdAt: admin.firestore.Timestamp.now(),
     };
 
     const docRef = await db.collection("zapProducts").add(product);
@@ -74,6 +96,7 @@ export const addProduct = async (req, res) => {
     });
   }
 };
+
 
 
 export const deleteProduct = async (req, res) => {
@@ -98,16 +121,30 @@ export const deleteProduct = async (req, res) => {
       return res.status(403).json({ error: "You are not authorized to delete this product" });
     }
 
+   
     if (product.imageId) {
       await cloudinary.uploader.destroy(product.imageId);
     }
 
+    
+    if (Array.isArray(product.imageGallery)) {
+      for (const img of product.imageGallery) {
+        if (img.public_id) {
+          await cloudinary.uploader.destroy(img.public_id);
+        }
+      }
+    }
+ 
     await docRef.delete();
 
     return res.status(200).json({ message: "Product deleted successfully" });
+
   } catch (error) {
     console.error("Error deleting product:", error);
-    return res.status(500).json({ error: "Failed to delete product", details: error.message });
+    return res.status(500).json({
+      error: "Failed to delete product",
+      details: error.message,
+    });
   }
 };
 
@@ -148,10 +185,10 @@ export const updateProduct = async (req, res) => {
     stock,
     discountPercentage,
     flashSale,
-    imageGallery
   } = req.body;
 
   const image = req.files?.image;
+  const newGalleryFiles = req.files?.imageGallery;
 
   if (!productId) {
     return res.status(400).json({ error: "Product ID is required" });
@@ -180,20 +217,10 @@ export const updateProduct = async (req, res) => {
     if (stock !== undefined) updates.stock = parseInt(stock);
     if (discountPercentage !== undefined) updates.discountPercentage = parseFloat(discountPercentage);
     if (flashSale !== undefined) updates.flashSale = flashSale === "true" || flashSale === true;
-    if (imageGallery) {
-      try {
-        updates.imageGallery = Array.isArray(imageGallery)
-          ? imageGallery
-          : JSON.parse(imageGallery);
-      } catch {
-        updates.imageGallery = [];
-      }
-    }
 
-   
+    // === HANDLE MAIN IMAGE UPDATE ===
     if (image) {
       try {
-        
         if (product.imageId) {
           await cloudinary.uploader.destroy(product.imageId);
         }
@@ -205,7 +232,46 @@ export const updateProduct = async (req, res) => {
         updates.imageUrl = uploadResult.secure_url;
         updates.imageId = uploadResult.public_id;
       } catch (uploadError) {
-        return res.status(500).json({ error: "Image upload failed", details: uploadError.message });
+        return res.status(500).json({ error: "Main image upload failed", details: uploadError.message });
+      }
+    }
+
+    // === HANDLE GALLERY IMAGE UPDATE ===
+    if (newGalleryFiles) {
+      try {
+        const filesArray = Array.isArray(newGalleryFiles)
+          ? newGalleryFiles
+          : [newGalleryFiles];
+
+        if (filesArray.length > 3) {
+          return res.status(400).json({ error: "Max 3 gallery images allowed" });
+        }
+
+        // Delete existing gallery images
+        if (Array.isArray(product.imageGallery)) {
+          for (const img of product.imageGallery) {
+            if (img.public_id) {
+              await cloudinary.uploader.destroy(img.public_id);
+            }
+          }
+        }
+
+        const uploadedGallery = [];
+
+        for (const file of filesArray) {
+          const uploadRes = await cloudinary.uploader.upload(file.tempFilePath, {
+            folder: `products/${userId}/gallery`,
+          });
+
+          uploadedGallery.push({
+            url: uploadRes.secure_url,
+            public_id: uploadRes.public_id,
+          });
+        }
+
+        updates.imageGallery = uploadedGallery;
+      } catch (galleryError) {
+        return res.status(500).json({ error: "Gallery image upload failed", details: galleryError.message });
       }
     }
 
