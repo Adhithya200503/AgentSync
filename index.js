@@ -16,14 +16,16 @@ import ZapStoreRoutes from "./routes/ZapStoreRoutes.js";
 import fileUpload from 'express-fileupload';
 import { getProduct, getProductsByStoreId, getZapStoreById } from "./controller/ZapStoreControllers.js"
 dotenv.config();
-const app = express();
 
-app.use(fileUpload({ useTempFiles: true, tempFileDir: "/tmp/" }));
+const app = express();
 app.use(cors({
   origin: ['http://localhost:5173', 'https://d98b-27-5-87-159.ngrok-free.app','https://agentsync-5ab53.web.app'],
   methods: ['GET', 'POST', 'DELETE', 'PATCH','PUT'],
   credentials: true
 }));
+
+app.use(fileUpload({ useTempFiles: true, tempFileDir: "/tmp/" }));
+
 const PORT = process.env.PORT || 3000;
 app.get("/", authenticateToken, (req, res) => {
   return res.json({ message: "hello world" })
