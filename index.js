@@ -34,12 +34,12 @@ app.get("/zap-store/store/products/:storeId",getProductsByStoreId)
 app.get("/zap-store/products/:productId",getProduct);
 app.get("/Zurl/:shortId",redirectShortUrl);
 app.get('/link-page/:username', getLinkPageByUsername);
-app.get("/:code", redirectLink);
+
 app.use("/whatsapp", authenticateToken, WhatsAppLinkRoutes)
 app.use("/zurl", authenticateToken ,  ZurlRoutes);
 app.use("/zapLink",authenticateToken,ZapLinkRoutes);
 app.use("/bio-gram",authenticateToken,BioGramRoutes)
 app.use("/zap-store",authenticateToken,ZapStoreRoutes);
 app.use("/ai",authenticateToken,aiRoutes);
-
+app.get("/:code", redirectLink);
 app.listen(3000, () => console.log(`server running successfully on port ${PORT} `))
