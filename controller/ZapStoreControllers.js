@@ -1,15 +1,37 @@
 import cloudinary from "../utils/cloudinary.js";
-import { db } from "../utils/firebase.js";
+import admin, { db } from "../utils/firebase.js";
 
-
+const ALLOWED_CATEGORIES = [
+  "Home Goods",
+  "Personal Care",
+  "Merchandise Apparel & Accessories",
+  "Electronic Peripherals",
+  "Gifts & Novelties"
+];
 
 export const addProduct = async (req, res) => {
   const userId = req.user?.user_id;
-  const { name, description, price, category , storeId } = req.body;
+  const {
+    name,
+    description,
+    price,
+    category,
+    stock = 0,
+    imageGallery = [],
+    discountPercentage = 0,
+    storeId,
+    flashSale = false,
+  } = req.body;
+
   const image = req.files?.image;
+
 
   if (!name || !description || !price || !category || !image || !storeId) {
     return res.status(400).json({ error: "All fields including image must be filled" });
+  }
+
+  if (!ALLOWED_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: "Invalid product category" });
   }
 
   try {
@@ -25,18 +47,31 @@ export const addProduct = async (req, res) => {
       imageId: result.public_id,
       userId,
       category,
+      stock: parseInt(stock),
+      discountPercentage: parseFloat(discountPercentage),
+      imageGallery: Array.isArray(imageGallery) ? imageGallery : [],
       storeId,
-      createdAt: new Date(),
+      flashSale: flashSale === 'true' || flashSale === true,
+      createdAt:admin.firestore.Timestamp.now(),
     };
 
     const docRef = await db.collection("zapProducts").add(product);
     await docRef.update({ productId: docRef.id });
-    product = {...product,productId:docRef.id};
-    res.status(200).json({ productId: docRef.id, message: "Product added successfully" ,product});
+
+    product = { ...product, productId: docRef.id };
+
+    return res.status(200).json({
+      message: "Product added successfully",
+      productId: docRef.id,
+      product,
+    });
 
   } catch (error) {
     console.error("Error adding product:", error);
-    res.status(500).json({ error: "Failed to add product", details: error.message });
+    return res.status(500).json({
+      error: "Failed to add product",
+      details: error.message,
+    });
   }
 };
 
@@ -104,7 +139,19 @@ export const getProduct = async (req, res) => {
 export const updateProduct = async (req, res) => {
   const { productId } = req.params;
   const userId = req.user?.user_id;
-  const { name, description, price, category } = req.body;
+
+  const {
+    name,
+    description,
+    price,
+    category,
+    stock,
+    discountPercentage,
+    flashSale,
+    imageGallery
+  } = req.body;
+
+  const image = req.files?.image;
 
   if (!productId) {
     return res.status(400).json({ error: "Product ID is required" });
@@ -125,43 +172,65 @@ export const updateProduct = async (req, res) => {
     }
 
     const updates = {};
+
     if (name) updates.name = name;
     if (description) updates.description = description;
     if (price) updates.price = parseFloat(price);
     if (category) updates.category = category;
-    updates.updatedAt = new Date();
+    if (stock !== undefined) updates.stock = parseInt(stock);
+    if (discountPercentage !== undefined) updates.discountPercentage = parseFloat(discountPercentage);
+    if (flashSale !== undefined) updates.flashSale = flashSale === "true" || flashSale === true;
+    if (imageGallery) {
+      try {
+        updates.imageGallery = Array.isArray(imageGallery)
+          ? imageGallery
+          : JSON.parse(imageGallery);
+      } catch {
+        updates.imageGallery = [];
+      }
+    }
+
+   
+    if (image) {
+      try {
+        
+        if (product.imageId) {
+          await cloudinary.uploader.destroy(product.imageId);
+        }
+
+        const uploadResult = await cloudinary.uploader.upload(image.tempFilePath, {
+          folder: `products/${userId}`,
+        });
+
+        updates.imageUrl = uploadResult.secure_url;
+        updates.imageId = uploadResult.public_id;
+      } catch (uploadError) {
+        return res.status(500).json({ error: "Image upload failed", details: uploadError.message });
+      }
+    }
+
+    updates.updatedAt = admin.firestore.Timestamp.now();
 
     await docRef.update(updates);
 
     return res.status(200).json({ message: "Product updated successfully", updates });
+
   } catch (error) {
     console.error("Error updating product:", error);
     return res.status(500).json({ error: "Failed to update product", details: error.message });
   }
 };
 
- 
-const ALLOWED_CATEGORIES = [
-  "Home Goods",
-  "Personal Care",
-  "Merchandise Apparel & Accessories",
-  "Electronic Peripherals",
-  "Gifts & Novelties"
-];
+
 
 export const createZapStore = async (req, res) => {
   const userId = req.user?.user_id;
-  const { storeName, bio, address, category } = req.body;
+  const { storeName, bio, address } = req.body;
   const logo = req.files?.logo;
 
-  if (!storeName || !bio || !address || !category) {
+  if (!storeName || !bio || !address) {
     return res.status(400).json({ error: "All fields including category are required" });
   }
-
-  if (!ALLOWED_CATEGORIES.includes(category)) {
-    return res.status(400).json({ error: "Invalid store category" });
-  }
-
   try {
     let logoUrl = "";
     let logoId = "";
@@ -178,7 +247,6 @@ export const createZapStore = async (req, res) => {
       storeName,
       bio,
       address: JSON.parse(address),
-      category,
       logoUrl,
       logoId,
       userId,
@@ -187,7 +255,7 @@ export const createZapStore = async (req, res) => {
 
     const docRef = await db.collection("zapStores").add(storeData);
     await docRef.update({ storeId: docRef.id });
-    storeData = {...storeData,storeId:docRef.id};
+    storeData = { ...storeData, storeId: docRef.id };
     res.status(201).json({ message: "Store created successfully", storeData });
 
   } catch (error) {
@@ -222,7 +290,7 @@ export const deleteZapStore = async (req, res) => {
       await cloudinary.uploader.destroy(store.logoId);
     }
 
-    
+
     await docRef.delete();
 
     res.json({ message: "Store deleted successfully" });
