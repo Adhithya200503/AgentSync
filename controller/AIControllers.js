@@ -84,8 +84,7 @@ export const generatePost = async (req, res) => {
 
     const rawPost = result.choices[0]?.message?.content || "No content generated.";
     const cleanGeneratedPost = rawPost.replace(/<think>.*?<\/think>/s, "").trim();
-
-    // ✨ Split cleanGeneratedPost into an array of posts (using regex)
+ 
     const posts = cleanGeneratedPost
       .split(/(?:\*\*\d\.\*\*|\d\.)\s*/g)
       .map(p => p.trim())

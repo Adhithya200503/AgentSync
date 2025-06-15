@@ -14,7 +14,7 @@ import { getPortfolio } from "./controller/skillVaultController.js"
 import aiRoutes from "./routes/AIRoutes.js"
 import ZapStoreRoutes from "./routes/ZapStoreRoutes.js";
 import fileUpload from 'express-fileupload';
-import { getProduct, getZapStoreById } from "./controller/ZapStoreControllers.js"
+import { getProduct, getProductsByStoreId, getZapStoreById } from "./controller/ZapStoreControllers.js"
 dotenv.config();
 const app = express();
 
@@ -30,6 +30,7 @@ app.get("/", authenticateToken, (req, res) => {
 })
 app.get("/portfolio/:portfolioId", getPortfolio);
 app.get("/zap-store/stores/:storeId",getZapStoreById)
+app.get("/zap-store/store/products/:storeId",getProductsByStoreId)
 app.get("zap-store/products/:storeId")
 app.get("/zap-store/products/:productId",getProduct);
 app.get("/Zurl/:shortId",redirectShortUrl);
