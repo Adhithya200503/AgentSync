@@ -645,7 +645,7 @@ export const deleteUserAccount = async (req, res) => {
 
 
 export const addToCart = async (req, res) => {
-  const userId = req.user?.uid; // Changed from req.user?.user_id to req.user?.uid
+  const userId = req.user?.uid;  
   const { productId, quantity = 1 } = req.body;
 
   if (!userId) {

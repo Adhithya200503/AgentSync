@@ -73,7 +73,8 @@ export const generatePost = async (req, res) => {
       Facebook: "Keep it friendly, casual, and relatable with light emojis.",
     }[socialMediaPlatform] || "Make it platform-appropriate and engaging.";
 
-    const prompt = `Generate 3 short, catchy social media posts for ${socialMediaPlatform}. Use the content provided below. Each post should be separated clearly and optimized for that platform.\n\nPlatform Style Hint: ${platformHint}\n\nTitle: ${title}\nDescription: ${description}\nLink: ${url}\n\nFormat:\n1. First Post\n2. Second Post\n3. Third Post`;
+    // **Improved Prompt**
+    const prompt = `Generate 3 short, catchy social media posts for ${socialMediaPlatform}. Use the content provided below. Each post MUST be clearly separated by the unique string '---POST_SEPARATOR---' on its own line, and optimized for that platform. Do NOT include any numbering (e.g., 1., 2., 3.). Ensure there are exactly three separators in the output, one before each post and one after the last post.\n\nPlatform Style Hint: ${platformHint}\n\nTitle: ${title}\nDescription: ${description}\nLink: ${url}\n\nFormat:\n---POST_SEPARATOR---\n[Post 1 content here]\n---POST_SEPARATOR---\n[Post 2 content here]\n---POST_SEPARATOR---\n[Post 3 content here]\n---POST_SEPARATOR---`;
 
     const inferenceClient = new InferenceClient(process.env.HF_API_KEY);
     const result = await inferenceClient.chatCompletion({
@@ -84,12 +85,37 @@ export const generatePost = async (req, res) => {
 
     const rawPost = result.choices[0]?.message?.content || "No content generated.";
     const cleanGeneratedPost = rawPost.replace(/<think>.*?<\/think>/s, "").trim();
- 
-    const posts = cleanGeneratedPost
-      .split(/(?:\*\*\d\.\*\*|\d\.)\s*/g)
+
+    let posts = cleanGeneratedPost
+      .split('---POST_SEPARATOR---')
       .map(p => p.trim())
       .filter(Boolean);
-    res.json({ title, description, image,  posts });
+
+    // Fallback if the primary separator didn't work as expected
+    if (posts.length < 3 || posts.length > 3) {
+        console.warn("AI did not produce exactly 3 distinct posts using the '---POST_SEPARATOR---'. Attempting fallback split by double newlines.");
+        posts = cleanGeneratedPost
+            .split(/\n\s*\n/) // Splits by one or more blank lines
+            .map(p => p.trim())
+            .filter(Boolean);
+    }
+
+    // Final fallback: if still no distinct posts, treat the whole thing as one post
+    if (posts.length === 0) {
+        posts = [cleanGeneratedPost.trim()];
+    }
+
+    // Ensure we always return at least one post, even if it's a generic one
+    if (posts.length === 0) {
+        posts.push("Unable to generate distinct posts. Please try refining your request.");
+    }
+    
+    // Optionally, ensure we only return 3 posts if more were accidentally generated
+    if (posts.length > 3) {
+        posts = posts.slice(0, 3);
+    }
+
+    res.json({ title, description, image, posts });
   } catch (err) {
     console.error("Error generating post:", err.message);
     res.status(500).json({ error: "Failed to process URL or generate post" });
