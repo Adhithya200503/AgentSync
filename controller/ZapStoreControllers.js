@@ -506,3 +506,98 @@ export const getProductsByStoreId = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch products", details: error.message });
   }
 };
+
+ 
+export const signup = async (req, res) => {
+  const { email, password, storeId } = req.body;
+
+  try {
+    if (!storeId || !email || !password) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const docRef = db.collection("zapStores").doc(storeId);
+    const store = await docRef.get();
+
+    if (!store.exists) {
+      return res.status(404).json({ error: "Store not found" });
+    }
+
+  
+    const userRecord = await admin.auth().createUser({ email, password });
+
+   
+    await db.collection("storeUsers").doc(userRecord.uid).set({
+      uid: userRecord.uid,
+      email,
+      storeId,
+      role: "customer",
+      createdAt: new Date()
+    });
+
+    res.json({ message: "Signup successful", uid: userRecord.uid });
+  } catch (err) {
+   
+    if (err.code === "auth/email-already-exists") {
+      return res.status(400).json({ error: "Email already registered" });
+    }
+
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+export const login = async (req, res) => {
+  const { email, password, storeId } = req.body;
+
+  if (!email || !password || !storeId) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+    
+    const storeRef = db.collection("zapStores").doc(storeId);
+    const storeSnap = await storeRef.get();
+
+    if (!storeSnap.exists) {
+      return res.status(404).json({ error: "Store not found" });
+    }
+ 
+    const firebaseApiKey = process.env.FIREBASE_API_KEY;
+    const response = await axios.post(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseApiKey}`,
+      {
+        email,
+        password,
+        returnSecureToken: true,
+      }
+    );
+
+    const { idToken, localId: uid } = response.data;
+
+    // Step 3: Check if user is linked to the store
+    const userDoc = await db.collection("storeUsers").doc(uid).get();
+
+    if (!userDoc.exists || userDoc.data().storeId !== storeId) {
+      return res.status(403).json({ error: "Unauthorized for this store" });
+    }
+
+    // Step 4: Return token and user info
+    return res.json({
+      message: "Login successful",
+      token: idToken,
+      uid,
+      storeId,
+      role: userDoc.data().role,
+    });
+  } catch (err) {
+    const errorMsg =
+      err?.response?.data?.error?.message === "EMAIL_NOT_FOUND"
+        ? "Email not registered"
+        : err?.response?.data?.error?.message === "INVALID_PASSWORD"
+        ? "Invalid password"
+        : err.message;
+
+    return res.status(401).json({ error: errorMsg });
+  }
+};
