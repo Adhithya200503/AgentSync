@@ -190,13 +190,7 @@ export const redirectLink = async (req, res) => {
     // Update Firestore document
     await linkRef.update(updateData);
 
-    // Construct redirect URL to assigned agent's waUrl or build it dynamically
-    // Assuming agents have phone and message fields:
-    const phone = assignedAgent.phone || "";
-    const message = encodeURIComponent(assignedAgent.message || data.message || "");
-    const waUrl = `https://wa.me/${phone}?text=${message}`;
-
-    return res.redirect(waUrl);
+    return res.redirect(data.waUrl);
   } catch (err) {
     console.error("redirectLink error:", err);
     return res.status(500).send("Internal Server Error");

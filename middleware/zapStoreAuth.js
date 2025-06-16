@@ -1,37 +1,21 @@
-import admin, { db } from "../utils/firebase.js";
+import jwt from "jsonwebtoken";
 
+const verifyAuth = (req, res, next) => {
+    const JWT_SECRET = process.env.JWT_SECRET || "your_super_secret_key";
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.split(" ")[1];
 
-const verifyAuth = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Unauthorized: No token provided" });
-  }
-
-  const idToken = authHeader.split(" ")[1];
-
-  try {
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const uid = decodedToken.uid;
-
-   
-    const userDoc = await db.collection("storeUsers").doc(uid).get();
-
-    if (!userDoc.exists) {
-      return res.status(403).json({ error: "User not found in storeUsers" });
+    if (!token) {
+        return res.status(401).json({ error: "Missing or invalid token" });
     }
 
-    req.user = {
-      uid,
-      email: decodedToken.email,
-      storeId: userDoc.data().storeId,
-      role: userDoc.data().role,
-    };
-
-    next(); 
-  } catch (err) {
-    return res.status(401).json({ error: "Invalid or expired token" });
-  }
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        return res.status(401).json({ error: "Invalid or expired token" });
+    }
 };
 
 export default verifyAuth

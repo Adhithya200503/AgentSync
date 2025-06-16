@@ -1,5 +1,9 @@
+import axios from "axios";
 import cloudinary from "../utils/cloudinary.js";
 import admin, { db } from "../utils/firebase.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+
 
 const ALLOWED_CATEGORIES = [
   "Home Goods",
@@ -23,7 +27,7 @@ export const addProduct = async (req, res) => {
   } = req.body;
 
   const image = req.files?.image;
-  const galleryFiles =  req.files?.imageGallery;
+  const galleryFiles = req.files?.imageGallery;
 
   if (!name || !description || !price || !category || !image || !storeId) {
     return res.status(400).json({ error: "All required fields including image must be filled" });
@@ -34,7 +38,7 @@ export const addProduct = async (req, res) => {
   }
 
   try {
-    
+
     const result = await cloudinary.uploader.upload(image.tempFilePath, {
       folder: `products/${userId}`,
     });
@@ -60,7 +64,7 @@ export const addProduct = async (req, res) => {
       }
     }
 
-  
+
     let product = {
       name,
       description,
@@ -121,12 +125,12 @@ export const deleteProduct = async (req, res) => {
       return res.status(403).json({ error: "You are not authorized to delete this product" });
     }
 
-   
+
     if (product.imageId) {
       await cloudinary.uploader.destroy(product.imageId);
     }
 
-    
+
     if (Array.isArray(product.imageGallery)) {
       for (const img of product.imageGallery) {
         if (img.public_id) {
@@ -134,7 +138,7 @@ export const deleteProduct = async (req, res) => {
         }
       }
     }
- 
+
     await docRef.delete();
 
     return res.status(200).json({ message: "Product deleted successfully" });
@@ -507,97 +511,310 @@ export const getProductsByStoreId = async (req, res) => {
   }
 };
 
- 
+
+const JWT_SECRET = process.env.JWT_SECRET || "your_super_secret_key";
+
 export const signup = async (req, res) => {
-  const { email, password, storeId } = req.body;
+  const { email, password } = req.body;
 
   try {
-    if (!storeId || !email || !password) {
-      return res.status(400).json({ error: "Missing required fields" });
+    if (!email || !password) {
+      return res.status(400).json({ error: "Missing email or password" });
     }
 
-    const docRef = db.collection("zapStores").doc(storeId);
-    const store = await docRef.get();
+    const existingSnap = await db.collection("storeUsers").where("email", "==", email).get();
 
-    if (!store.exists) {
-      return res.status(404).json({ error: "Store not found" });
-    }
-
-  
-    const userRecord = await admin.auth().createUser({ email, password });
-
-   
-    await db.collection("storeUsers").doc(userRecord.uid).set({
-      uid: userRecord.uid,
-      email,
-      storeId,
-      role: "customer",
-      createdAt: new Date()
-    });
-
-    res.json({ message: "Signup successful", uid: userRecord.uid });
-  } catch (err) {
-   
-    if (err.code === "auth/email-already-exists") {
+    if (!existingSnap.empty) {
       return res.status(400).json({ error: "Email already registered" });
     }
 
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const userDoc = await db.collection("storeUsers").add({
+      email,
+      password: hashedPassword,
+      createdAt: new Date(),
+    });
+
+    const token = jwt.sign({ uid: userDoc.id, email }, JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    res.json({ message: "Signup successful", uid: userDoc.id, token });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const login = async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Missing credentials" });
+  }
+
+  try {
+    const snap = await db.collection("storeUsers").where("email", "==", email).get();
+
+    if (snap.empty) {
+      return res.status(401).json({ error: "Email not registered" });
+    }
+
+    const userDoc = snap.docs[0];
+    const userData = userDoc.data();
+
+    const isMatch = await bcrypt.compare(password, userData.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: "Invalid password" });
+    }
+
+    const token = jwt.sign({ uid: userDoc.id, email }, JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    res.json({ message: "Login successful", uid: userDoc.id, token });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 
-export const login = async (req, res) => {
-  const { email, password, storeId } = req.body;
+export const deleteUserAccount = async (req, res) => {
+  const userId = req.user?.uid;
 
-  if (!email || !password || !storeId) {
-    return res.status(400).json({ error: "Missing required fields" });
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized: User ID missing" });
   }
 
   try {
-    
-    const storeRef = db.collection("zapStores").doc(storeId);
-    const storeSnap = await storeRef.get();
+    const productsSnapshot = await db.collection("zapProducts").where("userId", "==", userId).get();
+    const productDeleteBatch = db.batch();
 
-    if (!storeSnap.exists) {
-      return res.status(404).json({ error: "Store not found" });
-    }
- 
-    const firebaseApiKey = process.env.FIREBASE_API_KEY;
-    const response = await axios.post(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseApiKey}`,
-      {
-        email,
-        password,
-        returnSecureToken: true,
+    for (const doc of productsSnapshot.docs) {
+      const product = doc.data();
+      if (product.imageId) {
+        await cloudinary.uploader.destroy(product.imageId);
       }
-    );
-
-    const { idToken, localId: uid } = response.data;
-
-    // Step 3: Check if user is linked to the store
-    const userDoc = await db.collection("storeUsers").doc(uid).get();
-
-    if (!userDoc.exists || userDoc.data().storeId !== storeId) {
-      return res.status(403).json({ error: "Unauthorized for this store" });
+      if (Array.isArray(product.imageGallery)) {
+        for (const img of product.imageGallery) {
+          if (img.public_id) {
+            await cloudinary.uploader.destroy(img.public_id);
+          }
+        }
+      }
+      productDeleteBatch.delete(doc.ref);
     }
+    await productDeleteBatch.commit();
 
-    // Step 4: Return token and user info
-    return res.json({
-      message: "Login successful",
-      token: idToken,
-      uid,
-      storeId,
-      role: userDoc.data().role,
+    const storesSnapshot = await db.collection("zapStores").where("userId", "==", userId).get();
+    const storeDeleteBatch = db.batch();
+
+    for (const doc of storesSnapshot.docs) {
+      const store = doc.data();
+      if (store.logoId) {
+        await cloudinary.uploader.destroy(store.logoId);
+      }
+      storeDeleteBatch.delete(doc.ref);
+    }
+    await storeDeleteBatch.commit();
+
+    const cartItemsRef = db.collection("carts").doc(userId).collection("items");
+    const cartItemsSnapshot = await cartItemsRef.get();
+    const cartBatch = db.batch();
+
+    if (!cartItemsSnapshot.empty) {
+      cartItemsSnapshot.docs.forEach(doc => {
+        cartBatch.delete(doc.ref);
+      });
+      await cartBatch.commit();
+    }
+    await db.collection("carts").doc(userId).delete();
+
+    await db.collection("storeUsers").doc(userId).delete();
+
+    return res.status(200).json({ message: "Account and all associated data deleted successfully." });
+
+  } catch (error) {
+    console.error("Error deleting user account and associated data:", error);
+    return res.status(500).json({
+      error: "Failed to delete account and associated data",
+      details: error.message,
     });
-  } catch (err) {
-    const errorMsg =
-      err?.response?.data?.error?.message === "EMAIL_NOT_FOUND"
-        ? "Email not registered"
-        : err?.response?.data?.error?.message === "INVALID_PASSWORD"
-        ? "Invalid password"
-        : err.message;
-
-    return res.status(401).json({ error: errorMsg });
   }
 };
+
+
+export const addToCart = async (req, res) => {
+  const userId = req.user?.uid; // Changed from req.user?.user_id to req.user?.uid
+  const { productId, quantity = 1 } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized: User ID missing" });
+  }
+
+  if (!productId || typeof quantity !== 'number' || quantity <= 0) {
+    return res.status(400).json({ error: "Product ID and a valid quantity (greater than 0) are required" });
+  }
+
+  try {
+    // Check if the product exists
+    const productDoc = await db.collection("zapProducts").doc(productId).get();
+    if (!productDoc.exists) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const cartRef = db.collection("carts").doc(userId); // Cart document for the user
+    const cartItemRef = cartRef.collection("items").doc(productId); // Specific product in cart
+
+    const cartItem = await cartItemRef.get();
+
+    if (cartItem.exists) {
+      // If item already in cart, update quantity
+      await cartItemRef.update({
+        quantity: admin.firestore.FieldValue.increment(quantity),
+        updatedAt: admin.firestore.Timestamp.now(),
+      });
+      return res.status(200).json({ message: "Product quantity updated in cart" });
+    } else {
+      // If item not in cart, add new item
+      await cartItemRef.set({
+        productId,
+        quantity,
+        addedAt: admin.firestore.Timestamp.now(),
+      });
+      return res.status(201).json({ message: "Product added to cart successfully" });
+    }
+  } catch (error) {
+    console.error("Error adding to cart:", error);
+    return res.status(500).json({ error: "Failed to add product to cart", details: error.message });
+  }
+};
+
+export const getCart = async (req, res) => {
+  const userId = req.user?.uid; 
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized: User ID missing" });
+  }
+
+  try {
+    const cartItemsSnapshot = await db.collection("carts").doc(userId).collection("items").get();
+
+    const cartItems = [];
+    for (const doc of cartItemsSnapshot.docs) {
+      const cartItemData = doc.data();
+      const productId = cartItemData.productId;
+
+      // Fetch product details for each item in the cart
+      const productDoc = await db.collection("zapProducts").doc(productId).get();
+      if (productDoc.exists) {
+        cartItems.push({
+          cartItemId: doc.id, 
+          quantity: cartItemData.quantity,
+          product: { productId, ...productDoc.data() }, 
+        });
+      } else {
+        console.warn(`Product with ID ${productId} not found for user ${userId}'s cart.`);
+       
+      }
+    }
+
+    return res.status(200).json({ cart: cartItems });
+  } catch (error) {
+    console.error("Error fetching cart:", error);
+    return res.status(500).json({ error: "Failed to fetch cart", details: error.message });
+  }
+};
+
+export const updateCartItemQuantity = async (req, res) => {
+  const userId = req.user?.uid; 
+  const { productId } = req.params; 
+  const { quantity } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized: User ID missing" });
+  }
+
+  if (!productId || typeof quantity !== 'number' || quantity < 0) {
+    return res.status(400).json({ error: "Product ID and a valid quantity (0 or greater) are required" });
+  }
+
+  try {
+    const cartItemRef = db.collection("carts").doc(userId).collection("items").doc(productId);
+    const cartItem = await cartItemRef.get();
+
+    if (!cartItem.exists) {
+      return res.status(404).json({ error: "Product not found in cart" });
+    }
+
+    if (quantity === 0) {
+      
+      await cartItemRef.delete();
+      return res.status(200).json({ message: "Product removed from cart successfully" });
+    } else {
+      
+      await cartItemRef.update({
+        quantity,
+        updatedAt: admin.firestore.Timestamp.now(),
+      });
+      return res.status(200).json({ message: "Cart item quantity updated successfully" });
+    }
+  } catch (error) {
+    console.error("Error updating cart item quantity:", error);
+    return res.status(500).json({ error: "Failed to update cart item quantity", details: error.message });
+  }
+};
+
+export const removeCartItem = async (req, res) => {
+  const userId = req.user?.uid; 
+  const { productId } = req.params; 
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized: User ID missing" });
+  }
+
+  if (!productId) {
+    return res.status(400).json({ error: "Product ID is required" });
+  }
+
+  try {
+    const cartItemRef = db.collection("carts").doc(userId).collection("items").doc(productId);
+    const cartItem = await cartItemRef.get();
+
+    if (!cartItem.exists) {
+      return res.status(404).json({ error: "Product not found in cart" });
+    }
+
+    await cartItemRef.delete();
+    return res.status(200).json({ message: "Product removed from cart successfully" });
+  } catch (error) {
+    console.error("Error removing cart item:", error);
+    return res.status(500).json({ error: "Failed to remove product from cart", details: error.message });
+  }
+};
+
+export const clearCart = async (req, res) => {
+  const userId = req.user?.uid; 
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized: User ID missing" });
+  }
+
+  try {
+    const cartItemsSnapshot = await db.collection("carts").doc(userId).collection("items").get();
+
+    const batch = db.batch();
+    cartItemsSnapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+
+    return res.status(200).json({ message: "Cart cleared successfully" });
+  } catch (error) {
+    console.error("Error clearing cart:", error);
+    return res.status(500).json({ error: "Failed to clear cart", details: error.message });
+  }
+};
+
+
+

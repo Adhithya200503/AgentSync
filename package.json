@@ -13,6 +13,7 @@
   "dependencies": {
     "@huggingface/inference": "^4.0.4",
     "axios": "^1.9.0",
+    "bcrypt": "^6.0.0",
     "cheerio": "^1.1.0",
     "cloudinary": "^2.6.1",
     "cors": "^2.8.5",
@@ -20,6 +21,7 @@
     "express": "^5.1.0",
     "express-fileupload": "^1.5.1",
     "firebase-admin": "^13.4.0",
+    "jsonwebtoken": "^9.0.2",
     "puppeteer": "^24.10.1",
     "qrcode": "^1.5.4",
     "telegraf": "^4.16.3",
