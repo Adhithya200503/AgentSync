@@ -344,7 +344,7 @@ export const createZapStore = async (req, res) => {
   }
 };
 
-export const deleteStore = async (req, res) => {
+export const deleteZapStore = async (req, res) => {
   const { storeId } = req.params;
   const userId = req.user?.user_id;
 
