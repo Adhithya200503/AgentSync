@@ -59,8 +59,8 @@ export const createPortFolio = async (req, res) => {
     };
 
     const docRef = await db.collection("portfolios").add(portfolioData);
-    const url = `https://agentsync-5ab53.web.app/portfolio/${docRef.id}`; // Assuming this is your frontend URL
-    await docRef.update({ url }); // Update the document with its URL
+    const url = `https://agentsync-5ab53.web.app/biogram/${docRef.id}`; // Assuming this is your frontend URL
+    await docRef.update({ url }); 
 
     res.status(200).json({
       success: true,
