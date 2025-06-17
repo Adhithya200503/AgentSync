@@ -22,7 +22,8 @@ export const createPortFolio = async (req, res) => {
       education,
       languages,
       resume,
-      experience, // NEW: Added experience field
+      experience, 
+      template = "default"
     } = req.body;
 
     if (!name || !phoneNumber || !domain || !profession || !email) {
@@ -53,6 +54,7 @@ export const createPortFolio = async (req, res) => {
       languages: Array.isArray(languages) ? languages : [],
       experience: Array.isArray(experience) ? experience : [], // NEW: Initialize experience field
       resume: resume || "",
+      template,
       createdAt: new Date(),
     };
 
@@ -101,7 +103,8 @@ export const editPortFolio = async (req, res) => {
       education,
       languages,
       resume,
-      experience, // NEW: Added experience field
+      experience,  
+      template
     } = req.body;
 
     if (!id) {
@@ -140,6 +143,7 @@ export const editPortFolio = async (req, res) => {
       ...(Array.isArray(languages) && { languages }),
       ...(experience !== undefined && Array.isArray(experience) && { experience }), // NEW: Conditionally update experience
       ...(resume !== undefined && { resume }),
+      ...(template !== undefined && { template }),
       ...(typeof customFields === "object" && { customFields }),
       updatedAt: new Date(),
     };
