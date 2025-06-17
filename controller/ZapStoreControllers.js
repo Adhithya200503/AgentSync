@@ -176,7 +176,6 @@ export const getProduct = async (req, res) => {
 };
 
 
-
 export const updateProduct = async (req, res) => {
   const { productId } = req.params;
   const userId = req.user?.user_id;
@@ -189,10 +188,11 @@ export const updateProduct = async (req, res) => {
     stock,
     discountPercentage,
     flashSale,
+    existingGalleryPublicIds
   } = req.body;
 
   const image = req.files?.image;
-  const newGalleryFiles = req.files?.imageGallery;
+  const newGalleryFiles = req.files?.newGalleryFiles;
 
   if (!productId) {
     return res.status(400).json({ error: "Product ID is required" });
@@ -222,9 +222,10 @@ export const updateProduct = async (req, res) => {
     if (discountPercentage !== undefined) updates.discountPercentage = parseFloat(discountPercentage);
     if (flashSale !== undefined) updates.flashSale = flashSale === "true" || flashSale === true;
 
-    // === HANDLE MAIN IMAGE UPDATE ===
+
     if (image) {
       try {
+
         if (product.imageId) {
           await cloudinary.uploader.destroy(product.imageId);
         }
@@ -240,44 +241,53 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // === HANDLE GALLERY IMAGE UPDATE ===
-    if (newGalleryFiles) {
+    let currentGallery = Array.isArray(product.imageGallery) ? [...product.imageGallery] : [];
+    let publicIdsToKeep = [];
+
+
+    if (existingGalleryPublicIds) {
       try {
-        const filesArray = Array.isArray(newGalleryFiles)
-          ? newGalleryFiles
-          : [newGalleryFiles];
-
-        if (filesArray.length > 3) {
-          return res.status(400).json({ error: "Max 3 gallery images allowed" });
+        publicIdsToKeep = JSON.parse(existingGalleryPublicIds);
+        if (!Array.isArray(publicIdsToKeep)) {
+          publicIdsToKeep = []; // Ensure it's an array
         }
-
-        // Delete existing gallery images
-        if (Array.isArray(product.imageGallery)) {
-          for (const img of product.imageGallery) {
-            if (img.public_id) {
-              await cloudinary.uploader.destroy(img.public_id);
-            }
-          }
-        }
-
-        const uploadedGallery = [];
-
-        for (const file of filesArray) {
-          const uploadRes = await cloudinary.uploader.upload(file.tempFilePath, {
-            folder: `products/${userId}/gallery`,
-          });
-
-          uploadedGallery.push({
-            url: uploadRes.secure_url,
-            public_id: uploadRes.public_id,
-          });
-        }
-
-        updates.imageGallery = uploadedGallery;
-      } catch (galleryError) {
-        return res.status(500).json({ error: "Gallery image upload failed", details: galleryError.message });
+      } catch (parseError) {
+        console.warn("Failed to parse existingGalleryPublicIds:", parseError);
+        publicIdsToKeep = [];
       }
     }
+
+
+    const publicIdsToDelete = currentGallery
+      .map(img => img.public_id)
+      .filter(id => id && !publicIdsToKeep.includes(id));
+
+    if (publicIdsToDelete.length > 0) {
+      await cloudinary.api.delete_resources(publicIdsToDelete);
+    }
+
+
+    currentGallery = currentGallery.filter(img => img.public_id && publicIdsToKeep.includes(img.public_id));
+
+
+    const filesToUpload = Array.isArray(newGalleryFiles) ? newGalleryFiles : (newGalleryFiles ? [newGalleryFiles] : []);
+
+    if (currentGallery.length + filesToUpload.length > 3) {
+      return res.status(400).json({ error: "Max 3 gallery images allowed (after update)." });
+    }
+
+    for (const file of filesToUpload) {
+      if (file && file.tempFilePath) {
+        const uploadRes = await cloudinary.uploader.upload(file.tempFilePath, {
+          folder: `products/${userId}/gallery`,
+        });
+        currentGallery.push({
+          url: uploadRes.secure_url,
+          public_id: uploadRes.public_id,
+        });
+      }
+    }
+    updates.imageGallery = currentGallery;
 
     updates.updatedAt = admin.firestore.Timestamp.now();
 
@@ -580,12 +590,12 @@ export const login = async (req, res) => {
       expiresIn: "7d",
     });
 
-    
+
     res.cookie("auth_token", token, {
       httpOnly: true,
-      secure: true, 
+      secure: true,
       sameSite: "Strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, 
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     res.json({ message: "Login successful", uid: userDoc.id });
