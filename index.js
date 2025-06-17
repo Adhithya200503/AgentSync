@@ -15,6 +15,7 @@ import aiRoutes from "./routes/AIRoutes.js"
 import ZapStoreRoutes from "./routes/ZapStoreRoutes.js";
 import fileUpload from 'express-fileupload';
 import { getProduct, getProductsByStoreId, getZapStoreById } from "./controller/ZapStoreControllers.js"
+import cookieParser from "cookie-parser"
 dotenv.config();
 
 const app = express();
@@ -25,7 +26,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(fileUpload({ useTempFiles: true, tempFileDir: "/tmp/" }));
-
+app.use(cookieParser());
 const PORT = process.env.PORT || 3000;
 app.get("/", authenticateToken, (req, res) => {
   return res.json({ message: "hello world" })

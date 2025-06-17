@@ -540,7 +540,15 @@ export const signup = async (req, res) => {
       expiresIn: "7d",
     });
 
-    res.json({ message: "Signup successful", uid: userDoc.id, token });
+
+    res.cookie("auth_token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "Strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({ message: "Signup successful", uid: userDoc.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -572,7 +580,15 @@ export const login = async (req, res) => {
       expiresIn: "7d",
     });
 
-    res.json({ message: "Login successful", uid: userDoc.id, token });
+    
+    res.cookie("auth_token", token, {
+      httpOnly: true,
+      secure: true, 
+      sameSite: "Strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, 
+    });
+
+    res.json({ message: "Login successful", uid: userDoc.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -645,7 +661,7 @@ export const deleteUserAccount = async (req, res) => {
 
 
 export const addToCart = async (req, res) => {
-  const userId = req.user?.uid;  
+  const userId = req.user?.uid;
   const { productId, quantity = 1 } = req.body;
 
   if (!userId) {
@@ -691,7 +707,7 @@ export const addToCart = async (req, res) => {
 };
 
 export const getCart = async (req, res) => {
-  const userId = req.user?.uid; 
+  const userId = req.user?.uid;
 
   if (!userId) {
     return res.status(401).json({ error: "Unauthorized: User ID missing" });
@@ -709,13 +725,13 @@ export const getCart = async (req, res) => {
       const productDoc = await db.collection("zapProducts").doc(productId).get();
       if (productDoc.exists) {
         cartItems.push({
-          cartItemId: doc.id, 
+          cartItemId: doc.id,
           quantity: cartItemData.quantity,
-          product: { productId, ...productDoc.data() }, 
+          product: { productId, ...productDoc.data() },
         });
       } else {
         console.warn(`Product with ID ${productId} not found for user ${userId}'s cart.`);
-       
+
       }
     }
 
@@ -727,8 +743,8 @@ export const getCart = async (req, res) => {
 };
 
 export const updateCartItemQuantity = async (req, res) => {
-  const userId = req.user?.uid; 
-  const { productId } = req.params; 
+  const userId = req.user?.uid;
+  const { productId } = req.params;
   const { quantity } = req.body;
 
   if (!userId) {
@@ -748,11 +764,11 @@ export const updateCartItemQuantity = async (req, res) => {
     }
 
     if (quantity === 0) {
-      
+
       await cartItemRef.delete();
       return res.status(200).json({ message: "Product removed from cart successfully" });
     } else {
-      
+
       await cartItemRef.update({
         quantity,
         updatedAt: admin.firestore.Timestamp.now(),
@@ -766,8 +782,8 @@ export const updateCartItemQuantity = async (req, res) => {
 };
 
 export const removeCartItem = async (req, res) => {
-  const userId = req.user?.uid; 
-  const { productId } = req.params; 
+  const userId = req.user?.uid;
+  const { productId } = req.params;
 
   if (!userId) {
     return res.status(401).json({ error: "Unauthorized: User ID missing" });
@@ -794,7 +810,7 @@ export const removeCartItem = async (req, res) => {
 };
 
 export const clearCart = async (req, res) => {
-  const userId = req.user?.uid; 
+  const userId = req.user?.uid;
 
   if (!userId) {
     return res.status(401).json({ error: "Unauthorized: User ID missing" });
