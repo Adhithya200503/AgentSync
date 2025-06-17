@@ -1,4 +1,4 @@
-import { db } from "../utils/firebase.js";  
+import { db } from "../utils/firebase.js";
 
 export const createPortFolio = async (req, res) => {
   const userId = req.user.user_id;
@@ -21,7 +21,8 @@ export const createPortFolio = async (req, res) => {
       customFields = {},
       education,
       languages,
-      resume, // Added resume field
+      resume,
+      experience, // NEW: Added experience field
     } = req.body;
 
     if (!name || !phoneNumber || !domain || !profession || !email) {
@@ -50,18 +51,20 @@ export const createPortFolio = async (req, res) => {
       customFields: typeof customFields === "object" ? customFields : {},
       education: Array.isArray(education) ? education : [],
       languages: Array.isArray(languages) ? languages : [],
-      resume: resume || "", // Added resume field initialization
+      experience: Array.isArray(experience) ? experience : [], // NEW: Initialize experience field
+      resume: resume || "",
       createdAt: new Date(),
     };
 
     const docRef = await db.collection("portfolios").add(portfolioData);
-    const url = `https://agentsync-5ab53.web.app/portfolio/${docRef.id}`;
-    await docRef.update({ url });
+    const url = `https://agentsync-5ab53.web.app/portfolio/${docRef.id}`; // Assuming this is your frontend URL
+    await docRef.update({ url }); // Update the document with its URL
+
     res.status(200).json({
       success: true,
       message: "Portfolio created successfully.",
       id: docRef.id,
-      url
+      url,
     });
   } catch (error) {
     console.error("Error creating portfolio:", error);
@@ -97,7 +100,8 @@ export const editPortFolio = async (req, res) => {
       customFields = {},
       education,
       languages,
-      resume, // Added resume field
+      resume,
+      experience, // NEW: Added experience field
     } = req.body;
 
     if (!id) {
@@ -134,12 +138,14 @@ export const editPortFolio = async (req, res) => {
       ...(Array.isArray(projects) && { projects }),
       ...(Array.isArray(education) && { education }),
       ...(Array.isArray(languages) && { languages }),
-      ...(resume !== undefined && { resume }), // Added resume field update
+      ...(experience !== undefined && Array.isArray(experience) && { experience }), // NEW: Conditionally update experience
+      ...(resume !== undefined && { resume }),
       ...(typeof customFields === "object" && { customFields }),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     if (req.body.userId && req.body.userId !== user_id) {
+
       return res.status(403).json({ success: false, message: "Forbidden: Cannot change portfolio ownership." });
     }
 
@@ -176,4 +182,3 @@ export const getPortfolio = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error: " + error.message });
   }
 };
- 
