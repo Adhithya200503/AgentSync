@@ -14,13 +14,13 @@ const ALLOWED_CATEGORIES = [
 ];
 
 const socialMediaRegex = {
-    facebook: /^(https?:\/\/(www\.)?facebook\.com\/[a-zA-Z0-9.]+)\/?$/,
-    instagram: /^(https?:\/\/(www\.)?instagram\.com\/[a-zA-Z0-9_.]+)\/?$/,
-    twitter: /^(https?:\/\/(www\.)?(twitter|x)\.com\/[a-zA-Z0-9_]+)\/?$/,
-    linkedin: /^(https?:\/\/(www\.)?linkedin\.com\/(in|company)\/[a-zA-Z0-9_-]+)\/?$/,
-    website: /^(https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(:\d+)?(\/[^\s]*)?)$/i,
-    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-    phoneNumber: /^\+?[0-9]{6,15}$/,
+  facebook: /^(https?:\/\/(www\.)?facebook\.com\/[a-zA-Z0-9.]+)\/?$/,
+  instagram: /^(https?:\/\/(www\.)?instagram\.com\/[a-zA-Z0-9_.]+)\/?$/,
+  twitter: /^(https?:\/\/(www\.)?(twitter|x)\.com\/[a-zA-Z0-9_]+)\/?$/,
+  linkedin: /^(https?:\/\/(www\.)?linkedin\.com\/(in|company)\/[a-zA-Z0-9_-]+)\/?$/,
+  website: /^(https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(:\d+)?(\/[^\s]*)?)$/i,
+  email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  phoneNumber: /^\+?[0-9]{6,15}$/,
 };
 
 export const addProduct = async (req, res) => {
@@ -320,22 +320,12 @@ export const createZapStore = async (req, res) => {
     address,
     phoneNumber,
     email,
-    socialMedia,
+    socialMediaLinks, // Changed from socialMedia to socialMediaLinks
   } = req.body;
   const logo = req.files?.logo;
 
   if (!storeName || !bio || !address || !logo) {
     return res.status(400).json({ error: "All required fields including logo must be filled" });
-  }
-
-  let parsedAddress;
-  try {
-    parsedAddress = JSON.parse(address);
-    if (!parsedAddress.street || !parsedAddress.area || !parsedAddress.city || !parsedAddress.pincode) {
-      return res.status(400).json({ error: "Address must contain street, area, city, and pincode" });
-    }
-  } catch (e) {
-    return res.status(400).json({ error: "Invalid address format" });
   }
 
   if (email && !socialMediaRegex.email.test(email)) {
@@ -346,25 +336,34 @@ export const createZapStore = async (req, res) => {
     return res.status(400).json({ error: "Invalid phone number format" });
   }
 
-  let parsedSocialMedia = {};
-  if (socialMedia) {
+  let parsedSocialMediaLinks = [];
+  if (socialMediaLinks) {
     try {
-      parsedSocialMedia = JSON.parse(socialMedia);
+      // Assuming socialMediaLinks comes as a JSON string from the request body
+      const socialMediaArray = JSON.parse(socialMediaLinks);
 
-      for (const platform in parsedSocialMedia) {
-        const url = parsedSocialMedia[platform];
+      if (!Array.isArray(socialMediaArray)) {
+        return res.status(400).json({ error: "Social media links must be an array of objects." });
+      }
 
-        if (url && socialMediaRegex[platform] && !socialMediaRegex[platform].test(url)) {
-          return res.status(400).json({ error: `Invalid ${platform} URL format` });
+      for (const link of socialMediaArray) {
+        if (!link.type || !link.url) {
+          return res.status(400).json({ error: "Each social media link must have a 'type' and 'url'." });
         }
+
+        // Optional: Add regex validation for each URL based on its type
+        // This requires `socialMediaRegex` to have patterns for 'Website', 'GitHub', etc.
+        // For example: socialMediaRegex.GitHub.test(link.url)
+        if (socialMediaRegex[link.type] && !socialMediaRegex[link.type].test(link.url)) {
+          return res.status(400).json({ error: `Invalid ${link.type} URL format` });
+        }
+        parsedSocialMediaLinks.push({ type: link.type, url: link.url });
       }
     } catch (e) {
-
-      console.warn("Invalid socialMedia format received, defaulting to empty object:", e);
-      parsedSocialMedia = {};
+      console.warn("Invalid socialMediaLinks format received, defaulting to empty array:", e);
+      parsedSocialMediaLinks = [];
     }
   }
-
 
   try {
     const result = await cloudinary.uploader.upload(logo.tempFilePath, {
@@ -374,14 +373,14 @@ export const createZapStore = async (req, res) => {
     const newStore = {
       storeName,
       bio,
-      address: parsedAddress,
+      address,
       storeImageUrl: result.secure_url,
       storeImageUrlId: result.public_id,
       userId,
       createdAt: admin.firestore.Timestamp.now(),
       phoneNumber: phoneNumber || "",
       email: email || "",
-      socialMedia: parsedSocialMedia,
+      socialMediaLinks: parsedSocialMediaLinks, // Storing as an array
     };
 
     const docRef = await db.collection("zapStores").add(newStore);
@@ -477,11 +476,10 @@ export const updateZapStore = async (req, res) => {
   const {
     storeName,
     bio,
-    address,
-    category,
+    address, // Address is now expected as a string
     phoneNumber,
     email,
-    socialMedia
+    socialMediaLinks // Changed to socialMediaLinks
   } = req.body;
   const logo = req.files?.logo;
 
@@ -507,12 +505,20 @@ export const updateZapStore = async (req, res) => {
 
     if (storeName !== undefined) updates.storeName = storeName;
     if (bio !== undefined) updates.bio = bio;
+
+    // Handle address as a single string
+    if (address !== undefined) {
+      // No JSON parsing or sub-field validation needed for string address
+      updates.address = address;
+    }
+
     if (phoneNumber !== undefined) {
       if (phoneNumber && !socialMediaRegex.phoneNumber.test(phoneNumber)) {
         return res.status(400).json({ error: "Invalid phone number format" });
       }
       updates.phoneNumber = phoneNumber;
     }
+
     if (email !== undefined) {
       if (email && !socialMediaRegex.email.test(email)) {
         return res.status(400).json({ error: "Invalid email format" });
@@ -520,40 +526,30 @@ export const updateZapStore = async (req, res) => {
       updates.email = email;
     }
 
-    if (category !== undefined) {
-      if (!ALLOWED_CATEGORIES.includes(category)) {
-        return res.status(400).json({ error: "Invalid store category" });
-      }
-      updates.category = category;
-    }
-
-    if (address !== undefined) {
-      let parsedAddress;
+    // Handle socialMediaLinks as an array of objects
+    if (socialMediaLinks !== undefined) {
+      let parsedSocialMediaLinks = [];
       try {
-        parsedAddress = JSON.parse(address);
-        if (!parsedAddress.street || !parsedAddress.area || !parsedAddress.city || !parsedAddress.pincode) {
-          return res.status(400).json({ error: "Address must contain street, area, city, and pincode" });
+        const socialMediaArray = JSON.parse(socialMediaLinks);
+
+        if (!Array.isArray(socialMediaArray)) {
+          return res.status(400).json({ error: "Social media links must be an array of objects." });
         }
-        updates.address = parsedAddress;
-      } catch (e) {
-        return res.status(400).json({ error: "Invalid address format" });
-      }
-    }
 
-    if (socialMedia !== undefined) {
-      let parsedSocialMedia = {};
-      try {
-        parsedSocialMedia = JSON.parse(socialMedia);
-        for (const platform in parsedSocialMedia) {
-          const url = parsedSocialMedia[platform];
-          if (url && socialMediaRegex[platform] && !socialMediaRegex[platform].test(url)) {
-            return res.status(400).json({ error: `Invalid ${platform} URL format` });
+        for (const link of socialMediaArray) {
+          if (!link.type || !link.url) {
+            return res.status(400).json({ error: "Each social media link must have a 'type' and 'url'." });
           }
+          // Optional: Add regex validation for each URL based on its type
+          if (socialMediaRegex[link.type] && !socialMediaRegex[link.type].test(link.url)) {
+            return res.status(400).json({ error: `Invalid ${link.type} URL format` });
+          }
+          parsedSocialMediaLinks.push({ type: link.type, url: link.url });
         }
-        updates.socialMedia = parsedSocialMedia;
+        updates.socialMediaLinks = parsedSocialMediaLinks;
       } catch (e) {
-        console.warn("Invalid socialMedia format received, defaulting to empty object:", e);
-        updates.socialMedia = {};
+        console.warn("Invalid socialMediaLinks format received, defaulting to empty array:", e);
+        updates.socialMediaLinks = []; // Default to empty array on error
       }
     }
 
