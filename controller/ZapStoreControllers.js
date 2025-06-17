@@ -344,40 +344,71 @@ export const createZapStore = async (req, res) => {
   }
 };
 
-export const deleteZapStore = async (req, res) => {
-  const userId = req.user?.user_id;
+export const deleteStore = async (req, res) => {
   const { storeId } = req.params;
+  const userId = req.user?.user_id;
 
   if (!storeId) {
     return res.status(400).json({ error: "Store ID is required" });
   }
 
   try {
-    const docRef = db.collection("zapStores").doc(storeId);
-    const doc = await docRef.get();
+    const storeDocRef = db.collection("zapStores").doc(storeId);
+    const storeDoc = await storeDocRef.get();
 
-    if (!doc.exists) {
+    if (!storeDoc.exists) {
       return res.status(404).json({ error: "Store not found" });
     }
 
-    const store = doc.data();
-    if (store.userId !== userId) {
-      return res.status(403).json({ error: "Unauthorized to delete this store" });
+    const storeData = storeDoc.data();
+
+    if (storeData.userId !== userId) {
+      return res.status(403).json({ error: "You are not authorized to delete this store" });
     }
 
-    // Delete logo from Cloudinary if exists
-    if (store.logoId) {
-      await cloudinary.uploader.destroy(store.logoId);
+    const productsQuerySnapshot = await db.collection("zapProducts")
+      .where("storeId", "==", storeId)
+      .get();
+
+    const productDeletePromises = [];
+    const cloudinaryDeletePromises = [];
+
+    productsQuerySnapshot.forEach(productDoc => {
+      const productData = productDoc.data();
+
+      if (productData.imageId) {
+        cloudinaryDeletePromises.push(cloudinary.uploader.destroy(productData.imageId));
+      }
+
+      if (Array.isArray(productData.imageGallery)) {
+        productData.imageGallery.forEach(img => {
+          if (img.public_id) {
+            cloudinaryDeletePromises.push(cloudinary.uploader.destroy(img.public_id));
+          }
+        });
+      }
+
+      productDeletePromises.push(productDoc.ref.delete());
+    });
+
+    await Promise.allSettled(cloudinaryDeletePromises);
+
+    await Promise.all(productDeletePromises);
+
+    if (storeData.storeImageUrlId) {
+      await cloudinary.uploader.destroy(storeData.storeImageUrlId);
     }
 
+    await storeDocRef.delete();
 
-    await docRef.delete();
-
-    res.json({ message: "Store deleted successfully" });
+    return res.status(200).json({ message: "Store and all associated products deleted successfully" });
 
   } catch (error) {
-    console.error("Error deleting store:", error);
-    res.status(500).json({ error: "Failed to delete store", details: error.message });
+    console.error("Error deleting store and its products:", error);
+    return res.status(500).json({
+      error: "Failed to delete store and its products",
+      details: error.message,
+    });
   }
 };
 
