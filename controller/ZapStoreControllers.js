@@ -13,6 +13,16 @@ const ALLOWED_CATEGORIES = [
   "Gifts & Novelties"
 ];
 
+const socialMediaRegex = {
+    facebook: /^(https?:\/\/(www\.)?facebook\.com\/[a-zA-Z0-9.]+)\/?$/,
+    instagram: /^(https?:\/\/(www\.)?instagram\.com\/[a-zA-Z0-9_.]+)\/?$/,
+    twitter: /^(https?:\/\/(www\.)?(twitter|x)\.com\/[a-zA-Z0-9_]+)\/?$/,
+    linkedin: /^(https?:\/\/(www\.)?linkedin\.com\/(in|company)\/[a-zA-Z0-9_-]+)\/?$/,
+    website: /^(https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(:\d+)?(\/[^\s]*)?)$/i,
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+    phoneNumber: /^\+?[0-9]{6,15}$/,
+};
+
 export const addProduct = async (req, res) => {
   const userId = req.user?.user_id;
   const {
@@ -302,45 +312,93 @@ export const updateProduct = async (req, res) => {
 };
 
 
-
 export const createZapStore = async (req, res) => {
   const userId = req.user?.user_id;
-  const { storeName, bio, address } = req.body;
+  const {
+    storeName,
+    bio,
+    address,
+    phoneNumber,
+    email,
+    socialMedia,
+  } = req.body;
   const logo = req.files?.logo;
 
-  if (!storeName || !bio || !address) {
-    return res.status(400).json({ error: "All fields including category are required" });
+  if (!storeName || !bio || !address || !logo) {
+    return res.status(400).json({ error: "All required fields including logo must be filled" });
   }
+
+  let parsedAddress;
   try {
-    let logoUrl = "";
-    let logoId = "";
-
-    if (logo) {
-      const result = await cloudinary.uploader.upload(logo.tempFilePath, {
-        folder: `zapstores/${userId}`,
-      });
-      logoUrl = result.secure_url;
-      logoId = result.public_id;
+    parsedAddress = JSON.parse(address);
+    if (!parsedAddress.street || !parsedAddress.area || !parsedAddress.city || !parsedAddress.pincode) {
+      return res.status(400).json({ error: "Address must contain street, area, city, and pincode" });
     }
+  } catch (e) {
+    return res.status(400).json({ error: "Invalid address format" });
+  }
 
-    let storeData = {
+  if (email && !socialMediaRegex.email.test(email)) {
+    return res.status(400).json({ error: "Invalid email format" });
+  }
+
+  if (phoneNumber && !socialMediaRegex.phoneNumber.test(phoneNumber)) {
+    return res.status(400).json({ error: "Invalid phone number format" });
+  }
+
+  let parsedSocialMedia = {};
+  if (socialMedia) {
+    try {
+      parsedSocialMedia = JSON.parse(socialMedia);
+
+      for (const platform in parsedSocialMedia) {
+        const url = parsedSocialMedia[platform];
+
+        if (url && socialMediaRegex[platform] && !socialMediaRegex[platform].test(url)) {
+          return res.status(400).json({ error: `Invalid ${platform} URL format` });
+        }
+      }
+    } catch (e) {
+
+      console.warn("Invalid socialMedia format received, defaulting to empty object:", e);
+      parsedSocialMedia = {};
+    }
+  }
+
+
+  try {
+    const result = await cloudinary.uploader.upload(logo.tempFilePath, {
+      folder: `stores/${userId}`,
+    });
+
+    const newStore = {
       storeName,
       bio,
-      address: JSON.parse(address),
-      logoUrl,
-      logoId,
+      address: parsedAddress,
+      storeImageUrl: result.secure_url,
+      storeImageUrlId: result.public_id,
       userId,
-      createdAt: new Date(),
+      createdAt: admin.firestore.Timestamp.now(),
+      phoneNumber: phoneNumber || "",
+      email: email || "",
+      socialMedia: parsedSocialMedia,
     };
 
-    const docRef = await db.collection("zapStores").add(storeData);
+    const docRef = await db.collection("zapStores").add(newStore);
     await docRef.update({ storeId: docRef.id });
-    storeData = { ...storeData, storeId: docRef.id };
-    res.status(201).json({ message: "Store created successfully", storeData });
+
+    return res.status(200).json({
+      message: "Zap Store created successfully",
+      storeId: docRef.id,
+      storeData: { ...newStore, storeId: docRef.id },
+    });
 
   } catch (error) {
-    console.error("Error creating store:", error);
-    res.status(500).json({ error: "Failed to create store", details: error.message });
+    console.error("Error creating Zap Store:", error);
+    return res.status(500).json({
+      error: "Failed to create Zap Store",
+      details: error.message,
+    });
   }
 };
 
@@ -416,15 +474,19 @@ export const deleteZapStore = async (req, res) => {
 export const updateZapStore = async (req, res) => {
   const userId = req.user?.user_id;
   const { storeId } = req.params;
-  const { storeName, bio, address, category } = req.body;
+  const {
+    storeName,
+    bio,
+    address,
+    category,
+    phoneNumber,
+    email,
+    socialMedia
+  } = req.body;
   const logo = req.files?.logo;
 
-  if (!storeName || !bio || !address || !category) {
-    return res.status(400).json({ error: "All fields including category are required" });
-  }
-
-  if (!ALLOWED_CATEGORIES.includes(category)) {
-    return res.status(400).json({ error: "Invalid store category" });
+  if (!storeId) {
+    return res.status(400).json({ error: "Store ID is required" });
   }
 
   try {
@@ -436,39 +498,82 @@ export const updateZapStore = async (req, res) => {
     }
 
     const store = doc.data();
+
     if (store.userId !== userId) {
       return res.status(403).json({ error: "Unauthorized to update this store" });
     }
 
-    let logoUrl = store.logoUrl;
-    let logoId = store.logoId;
+    const updates = {};
 
-    // Replace logo if new one is uploaded
-    if (logo) {
-      // Delete old logo from Cloudinary
-      if (logoId) {
-        await cloudinary.uploader.destroy(logoId);
+    if (storeName !== undefined) updates.storeName = storeName;
+    if (bio !== undefined) updates.bio = bio;
+    if (phoneNumber !== undefined) {
+      if (phoneNumber && !socialMediaRegex.phoneNumber.test(phoneNumber)) {
+        return res.status(400).json({ error: "Invalid phone number format" });
       }
-
-      // Upload new logo
-      const result = await cloudinary.uploader.upload(logo.tempFilePath, {
-        folder: `zapstores/${userId}`,
-      });
-      logoUrl = result.secure_url;
-      logoId = result.public_id;
+      updates.phoneNumber = phoneNumber;
+    }
+    if (email !== undefined) {
+      if (email && !socialMediaRegex.email.test(email)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
+      updates.email = email;
     }
 
-    await docRef.update({
-      storeName,
-      bio,
-      address: JSON.parse(address),
-      category,
-      logoUrl,
-      logoId,
-      updatedAt: new Date(),
-    });
+    if (category !== undefined) {
+      if (!ALLOWED_CATEGORIES.includes(category)) {
+        return res.status(400).json({ error: "Invalid store category" });
+      }
+      updates.category = category;
+    }
 
-    res.json({ message: "Store updated successfully" });
+    if (address !== undefined) {
+      let parsedAddress;
+      try {
+        parsedAddress = JSON.parse(address);
+        if (!parsedAddress.street || !parsedAddress.area || !parsedAddress.city || !parsedAddress.pincode) {
+          return res.status(400).json({ error: "Address must contain street, area, city, and pincode" });
+        }
+        updates.address = parsedAddress;
+      } catch (e) {
+        return res.status(400).json({ error: "Invalid address format" });
+      }
+    }
+
+    if (socialMedia !== undefined) {
+      let parsedSocialMedia = {};
+      try {
+        parsedSocialMedia = JSON.parse(socialMedia);
+        for (const platform in parsedSocialMedia) {
+          const url = parsedSocialMedia[platform];
+          if (url && socialMediaRegex[platform] && !socialMediaRegex[platform].test(url)) {
+            return res.status(400).json({ error: `Invalid ${platform} URL format` });
+          }
+        }
+        updates.socialMedia = parsedSocialMedia;
+      } catch (e) {
+        console.warn("Invalid socialMedia format received, defaulting to empty object:", e);
+        updates.socialMedia = {};
+      }
+    }
+
+    if (logo) {
+      if (store.storeImageUrlId) {
+        await cloudinary.uploader.destroy(store.storeImageUrlId);
+      }
+
+      const result = await cloudinary.uploader.upload(logo.tempFilePath, {
+        folder: `stores/${userId}`,
+      });
+      updates.storeImageUrl = result.secure_url;
+      updates.storeImageUrlId = result.public_id;
+    }
+
+    updates.updatedAt = admin.firestore.Timestamp.now();
+
+    await docRef.update(updates);
+
+    res.status(200).json({ message: "Store updated successfully" });
 
   } catch (error) {
     console.error("Error updating store:", error);
