@@ -21,7 +21,7 @@ dotenv.config();
 const app = express();
 app.set("trust proxy", 1);
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://d98b-27-5-87-159.ngrok-free.app','https://agentsync-5ab53.web.app','https://ag-sync.web.app'],
+  origin: ['http://localhost:5173','https://agentsync-5ab53.web.app','https://biograms.web.app'],
   methods: ['GET', 'POST', 'DELETE', 'PATCH','PUT'],
   credentials: true
 }));
