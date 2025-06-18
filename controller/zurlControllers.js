@@ -28,9 +28,9 @@ const normalizeHost = (host) => {
 };
 
 export const createShortUrl = async (req, res) => {
-  const user = req.user;
+  const user = req.user; // Assumes user is populated by middleware
 
-  const { originalUrl, customUrl, customDomain, protected: isProtected } = req.body;
+  const { originalUrl, customUrl, customDomain, protected: isProtected, zaplinkIds, name } = req.body;
 
   if (!originalUrl || !isValidUrl(originalUrl)) {
     return res.status(400).json({ error: 'Invalid or missing originalUrl' });
@@ -38,7 +38,8 @@ export const createShortUrl = async (req, res) => {
 
   const slug = customUrl?.trim() || uuidv4().slice(0, 8);
 
-  const docRef = db.collection('short-links').doc(slug);
+  const shortLinksCollection = db.collection('short-links');
+  const docRef = shortLinksCollection.doc(slug);
   const doc = await docRef.get();
 
   if (doc.exists) {
@@ -50,28 +51,36 @@ export const createShortUrl = async (req, res) => {
 
   if (customDomain && customDomain.trim() !== "") {
     if (!normalizeHost(customDomain).includes('.')) {
-        return res.status(400).json({ error: 'Invalid customDomain format' });
+      return res.status(400).json({ error: 'Invalid customDomain format' });
     }
     shortUrlBase = `https://${normalizeHost(customDomain)}`;
     storedCustomDomain = normalizeHost(customDomain);
   } else {
+    // IMPORTANT: In a production backend, process.env.BASE_URL should be defined securely.
+    // Using req.protocol and req.get('host') is generally fine for the server's own address.
     const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    shortUrlBase = `${appBaseUrl}/Zurl`;
+    shortUrlBase = `${appBaseUrl}/Zurl`; // Assuming /Zurl is the base path for your shortened links
   }
 
   const shortUrl = `${shortUrlBase}/${slug}`;
 
-  const qrCodeDataURL = await QRCode.toDataURL(originalUrl);
+  let qrCodeDataURL;
+  try {
+    qrCodeDataURL = await QRCode.toDataURL(originalUrl);
+  } catch (qrError) {
+    console.error("Error generating QR code:", qrError);
+    return res.status(500).json({ error: 'Failed to generate QR code' });
+  }
 
-  const data = {
+  const shortUrlData = {
     shortUrl,
     shortId: slug,
     originalUrl,
     userId: user?.uid || null,
     qrcode: qrCodeDataURL,
     clicks: 0,
-    createdAt: new Date().toISOString(),
-    customUrl: storedCustomDomain,
+    createdAt: FieldValue.serverTimestamp(), 
+    customDomain: storedCustomDomain, 
     isActive: true,
     protected: isProtected || false,
     unLockId: isProtected ? uuidv4() : null,
@@ -79,17 +88,55 @@ export const createShortUrl = async (req, res) => {
     deviceStats: {},
     browserStats: {},
     osStats: {},
-    folderId:null
+    folderId: null,
+    name: name || null, 
   };
 
-  await docRef.set(data);
+  try {
+    await docRef.set(shortUrlData);
 
-  return res.status(201).json({
-    shortId: slug,
-    shortUrl: shortUrl,
-    qrcode: qrCodeDataURL,
-    unLockId: isProtected ? data.unLockId : undefined
-  });
+    if (zaplinkIds && Array.isArray(zaplinkIds) && zaplinkIds.length > 0) {
+      const linkPagesCollection = db.collection('linkPages');
+      for (const zaplinkId of zaplinkIds) {
+        const zaplinkDocRef = linkPagesCollection.doc(zaplinkId);
+        try {
+          const zaplinkDoc = await zaplinkDocRef.get();
+          if (zaplinkDoc.exists) {
+       
+            const newZaplinkEntry = {
+              icon: "link", 
+              title: name || shortUrl, 
+              type: "Custom", 
+              url: shortUrl, 
+            };
+
+            
+            await zaplinkDocRef.update({
+              links: FieldValue.arrayUnion(newZaplinkEntry),
+              updatedAt: FieldValue.serverTimestamp(), 
+            });
+            console.log(`Short URL added to Zaplink: ${zaplinkId}`);
+          } else {
+            console.warn(`Zaplink document with ID ${zaplinkId} not found.`);
+          }
+        } catch (updateError) {
+          console.error(`Error updating Zaplink ${zaplinkId}:`, updateError);
+          
+        }
+      }
+    }
+
+    return res.status(201).json({
+      shortId: slug,
+      shortUrl: shortUrl,
+      qrcode: qrCodeDataURL,
+      unLockId: isProtected ? shortUrlData.unLockId : undefined,
+      name: shortUrlData.name,
+    });
+  } catch (dbError) {
+    console.error("Error saving short link or updating Zaplinks:", dbError);
+    return res.status(500).json({ error: 'Failed to create short URL or update Zaplinks' });
+  }
 };
 
 export const redirectShortUrl = async (req, res) => {
