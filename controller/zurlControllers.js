@@ -179,7 +179,7 @@ export const redirectShortUrl = async (req, res) => {
   }
 
   if (data.protected) {
-    const protectedRedirectBase = `https://${requestHost}/unlock`;
+    const protectedRedirectBase = `https://${requestHost}/zurl/unlock`;
     return res.redirect(`${protectedRedirectBase}/${shortId}`);
   }
 
