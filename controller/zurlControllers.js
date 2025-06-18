@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { v4 as uuidv4 } from "uuid";
 import admin, { db } from "../utils/firebase.js";
 import { UAParser } from "ua-parser-js";
@@ -56,10 +56,9 @@ export const createShortUrl = async (req, res) => {
     shortUrlBase = `https://${normalizeHost(customDomain)}`;
     storedCustomDomain = normalizeHost(customDomain);
   } else {
-    // IMPORTANT: In a production backend, process.env.BASE_URL should be defined securely.
-    // Using req.protocol and req.get('host') is generally fine for the server's own address.
+ 
     const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    shortUrlBase = `${appBaseUrl}/Zurl`; // Assuming /Zurl is the base path for your shortened links
+    shortUrlBase = `${appBaseUrl}/Zurl`;  
   }
 
   const shortUrl = `${shortUrlBase}/${slug}`;
