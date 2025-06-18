@@ -28,9 +28,9 @@ const normalizeHost = (host) => {
 };
 
 export const createShortUrl = async (req, res) => {
-  const user = req.user; // Assumes user is populated by middleware
+  const user = req.user;
 
-  const { originalUrl, customUrl, customDomain, protected: isProtected, zaplinkIds, name } = req.body;
+  const { originalUrl, customUrl, protected: isProtected, zaplinkIds, name } = req.body;
 
   if (!originalUrl || !isValidUrl(originalUrl)) {
     return res.status(400).json({ error: 'Invalid or missing originalUrl' });
@@ -46,20 +46,8 @@ export const createShortUrl = async (req, res) => {
     return res.status(409).json({ error: 'Custom URL (slug) already in use' });
   }
 
-  let shortUrlBase;
-  let storedCustomDomain = "";
-
-  if (customDomain && customDomain.trim() !== "") {
-    if (!normalizeHost(customDomain).includes('.')) {
-      return res.status(400).json({ error: 'Invalid customDomain format' });
-    }
-    shortUrlBase = `https://${normalizeHost(customDomain)}`;
-    storedCustomDomain = normalizeHost(customDomain);
-  } else {
- 
-    const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    shortUrlBase = `${appBaseUrl}/Zurl`;  
-  }
+  const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+  const shortUrlBase = `${appBaseUrl}/Zurl`;
 
   const shortUrl = `${shortUrlBase}/${slug}`;
 
@@ -78,8 +66,7 @@ export const createShortUrl = async (req, res) => {
     userId: user?.uid || null,
     qrcode: qrCodeDataURL,
     clicks: 0,
-    createdAt: FieldValue.serverTimestamp(), 
-    customDomain: storedCustomDomain, 
+    createdAt: FieldValue.serverTimestamp(),
     isActive: true,
     protected: isProtected || false,
     unLockId: isProtected ? uuidv4() : null,
@@ -88,7 +75,7 @@ export const createShortUrl = async (req, res) => {
     browserStats: {},
     osStats: {},
     folderId: null,
-    name: name || null, 
+    name: name || null,
   };
 
   try {
@@ -101,18 +88,16 @@ export const createShortUrl = async (req, res) => {
         try {
           const zaplinkDoc = await zaplinkDocRef.get();
           if (zaplinkDoc.exists) {
-       
             const newZaplinkEntry = {
-              icon: "link", 
-              title: name || shortUrl, 
-              type: "Custom", 
-              url: shortUrl, 
+              icon: "link",
+              title: name || shortUrl,
+              type: "Custom",
+              url: shortUrl,
             };
 
-            
             await zaplinkDocRef.update({
               links: FieldValue.arrayUnion(newZaplinkEntry),
-              updatedAt: FieldValue.serverTimestamp(), 
+              updatedAt: FieldValue.serverTimestamp(),
             });
             console.log(`Short URL added to Zaplink: ${zaplinkId}`);
           } else {
@@ -120,7 +105,6 @@ export const createShortUrl = async (req, res) => {
           }
         } catch (updateError) {
           console.error(`Error updating Zaplink ${zaplinkId}:`, updateError);
-          
         }
       }
     }
@@ -158,19 +142,15 @@ export const redirectShortUrl = async (req, res) => {
   const normalizedRequestHost = normalizeHost(requestHost);
   let expectedDomainMatch = false;
 
-  if (data.customUrl && data.customUrl !== "") {
-    expectedDomainMatch = normalizedRequestHost === normalizeHost(data.customUrl);
-  } else {
-    const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const normalizedAppBaseHost = normalizeHost(new URL(appBaseUrl).host);
+  const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+  const normalizedAppBaseHost = normalizeHost(new URL(appBaseUrl).host);
 
-    const isDefaultPath = req.originalUrl.includes(`/Zurl/${shortId}`);
+  const isDefaultPath = req.originalUrl.includes(`/Zurl/${shortId}`);
 
-    expectedDomainMatch = normalizedRequestHost === normalizedAppBaseHost && isDefaultPath;
-  }
+  expectedDomainMatch = normalizedRequestHost === normalizedAppBaseHost && isDefaultPath;
 
   if (!expectedDomainMatch) {
-    console.warn(`Attempted access of shortId ${shortId} on host ${requestHost} (expected customUrl: ${data.customUrl || 'default'})`);
+    console.warn(`Attempted access of shortId ${shortId} on host ${requestHost} (expected default application domain)`);
     return res.status(404).send("Short link not found for this domain or path.");
   }
 
