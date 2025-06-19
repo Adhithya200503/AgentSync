@@ -30,7 +30,7 @@ const normalizeHost = (host) => {
 export const createShortUrl = async (req, res) => {
   const user = req.user;
 
-  const { originalUrl, customUrl, protected: isProtected, zaplinkIds, name } = req.body;
+  const { originalUrl, customUrl, protected: isProtected, zaplinkIds, name , folderId } = req.body;
 
   if (!originalUrl || !isValidUrl(originalUrl)) {
     return res.status(400).json({ error: 'Invalid or missing originalUrl' });
@@ -74,7 +74,7 @@ export const createShortUrl = async (req, res) => {
     deviceStats: {},
     browserStats: {},
     osStats: {},
-    folderId: null,
+    folderId: folderId || null,
     name: name || null,
   };
 
