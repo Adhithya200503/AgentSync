@@ -66,7 +66,7 @@ export const createShortUrl = async (req, res) => {
     userId: user?.uid || null,
     qrcode: qrCodeDataURL,
     clicks: 0,
-    createdAt: Timestamp.now,
+    createdAt: Timestamp.now(),
     isActive: true,
     protected: isProtected || false,
     unLockId: isProtected ? uuidv4() : null,
