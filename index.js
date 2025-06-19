@@ -21,7 +21,7 @@ dotenv.config();
 const app = express();
 app.set("trust proxy", 1);
 app.use(cors({
-  origin: ['http://localhost:5173','https://agentsync-5ab53.web.app','https://biograms.web.app'],
+  origin: ['http://localhost:5173','https://agentsync-5ab53.web.app','https://biograms.web.app','https://zapstore-in.web.app'],
   methods: ['GET', 'POST', 'DELETE', 'PATCH','PUT'],
   credentials: true
 }));
