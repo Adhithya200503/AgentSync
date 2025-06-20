@@ -1,11 +1,133 @@
 import admin, { db } from "../utils/firebase.js";
+import { promises as fs } from 'fs'; 
+import cloudinary from "../utils/cloudinary.js";
+// export const createOrUpdateLinkPage = async (req, res) => {
+//   try {
+//     const uid = req.user.uid;
+//     const { username, bio = '', profilePic = '', links = [] , template} = req.body;
+
+//     // Validate username
+//     if (!username || typeof username !== 'string' || username.trim() === '') {
+//       return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
+//     }
+//     if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+//       return res.status(400).json({ success: false, message: 'Username can only contain alphanumeric characters, underscores, hyphens, and periods.' });
+//     }
+//     if (username.length < 3 || username.length > 30) {
+//       return res.status(400).json({ success: false, message: 'Username must be between 3 and 30 characters long.' });
+//     }
+
+//     // Validate bio
+//     if (typeof bio !== 'string') {
+//       return res.status(400).json({ success: false, message: 'Bio must be a string.' });
+//     }
+//     if (bio.length > 250) {
+//       return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
+//     }
+
+//     // Validate profile picture URL
+//     if (profilePic && typeof profilePic !== 'string') {
+//       return res.status(400).json({ success: false, message: 'Profile picture must be a URL string.' });
+//     }
+//     if (profilePic && !/^https?:\/\/.+\..+$/.test(profilePic)) {
+//       return res.status(400).json({ success: false, message: 'Invalid profile picture URL format.' });
+//     }
+
+//     // Validate links
+//     if (!Array.isArray(links) || links.length === 0) {
+//       return res.status(400).json({ success: false, message: 'At least one link is required.' });
+//     }
+
+//     for (const [index, link] of links.entries()) {
+//       if (!link.title || typeof link.title !== 'string' || link.title.trim() === '') {
+//         return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
+//       }
+//       if (!link.url || typeof link.url !== 'string' || link.url.trim() === '') {
+//         return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
+//       }
+//       if (!/^https?:\/\/.+\..+$/.test(link.url) && !/^mailto:.+@.+\..+$/.test(link.url)) {
+//         return res.status(400).json({ success: false, message: `Link ${index + 1}: Invalid URL format. Must start with http(s):// or mailto:.` });
+//       }
+//       if (!link.icon || typeof link.icon !== 'string' || link.icon.trim() === '') {
+//         return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
+//       }
+//     }
+
+//     const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app';
+//     const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username}`;
+
+//     // Check if username is already taken globally
+//     const linkPageRef = db.collection('linkPages').doc(username);
+//     const linkPageSnap = await linkPageRef.get();
+
+//     if (linkPageSnap.exists) {
+//       const existingData = linkPageSnap.data();
+//       if (existingData.uid !== uid) {
+//         return res.status(403).json({ success: false, message: 'Username already taken by another user.' });
+//       }
+//     }
+
+//     // Preserve existing link click counts if updating
+//     const existingLinksMap = new Map(
+//       (linkPageSnap.exists && linkPageSnap.data().links || []).map(link => [link.url, link])
+//     );
+
+//     const formattedLinks = links.map(newLink => {
+//       const existingLink = existingLinksMap.get(newLink.url);
+//       return {
+//         title: newLink.title,
+//         url: newLink.url,
+//         type: newLink.title,
+//         icon: newLink.icon,
+//       };
+//     });
+
+//     await linkPageRef.set({
+//       uid,
+//       username,
+//       bio,
+//       profilePic,
+//       links: formattedLinks,
+//       pageClicks: linkPageSnap.exists ? linkPageSnap.data().pageClicks : 0,
+//       createdAt: linkPageSnap.exists ? linkPageSnap.data().createdAt : new Date(),
+//       updatedAt: new Date(),
+//       linkPageUrl,
+//       template
+//     }, { merge: true });
+
+//     res.status(200).json({ success: true, message: 'Link page saved successfully.', linkPageUrl });
+//   } catch (error) {
+//     console.error('Error in createOrUpdateLinkPage:', error);
+//     res.status(500).json({ success: false, error: error.message });
+//   }
+// };
 
 export const createOrUpdateLinkPage = async (req, res) => {
+  const tempFilePaths = [];
+
   try {
     const uid = req.user.uid;
-    const { username, bio = '', profilePic = '', links = [] , template} = req.body;
 
-    // Validate username
+    const { username, bio = '', template } = req.body;
+    const uploadedFiles = req.files || {};
+
+    const rawLinks = req.body;
+    const incomingLinks = [];
+    let i = 0;
+    while (rawLinks[`links[${i}][platform]`] !== undefined) {
+      const link = {
+        platform: rawLinks[`links[${i}][platform]`],
+        value: rawLinks[`links[${i}][value]`],
+        title: rawLinks[`links[${i}][title]`],
+        icon: rawLinks[`links[${i}][originalIcon]`],
+      };
+      if (rawLinks[`links[${i}][existingCustomIconUrl]`]) {
+        link.existingCustomIconUrl = rawLinks[`links[${i}][existingCustomIconUrl]`];
+      }
+      incomingLinks.push(link);
+      i++;
+    }
+
     if (!username || typeof username !== 'string' || username.trim() === '') {
       return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
     }
@@ -16,7 +138,6 @@ export const createOrUpdateLinkPage = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Username must be between 3 and 30 characters long.' });
     }
 
-    // Validate bio
     if (typeof bio !== 'string') {
       return res.status(400).json({ success: false, message: 'Bio must be a string.' });
     }
@@ -24,38 +145,25 @@ export const createOrUpdateLinkPage = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
     }
 
-    // Validate profile picture URL
-    if (profilePic && typeof profilePic !== 'string') {
-      return res.status(400).json({ success: false, message: 'Profile picture must be a URL string.' });
-    }
-    if (profilePic && !/^https?:\/\/.+\..+$/.test(profilePic)) {
-      return res.status(400).json({ success: false, message: 'Invalid profile picture URL format.' });
-    }
-
-    // Validate links
-    if (!Array.isArray(links) || links.length === 0) {
+    if (!Array.isArray(incomingLinks) || incomingLinks.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one link is required.' });
     }
 
-    for (const [index, link] of links.entries()) {
+    for (const [index, link] of incomingLinks.entries()) {
       if (!link.title || typeof link.title !== 'string' || link.title.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
       }
-      if (!link.url || typeof link.url !== 'string' || link.url.trim() === '') {
+      if (!link.value || typeof link.value !== 'string' || link.value.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
       }
-      if (!/^https?:\/\/.+\..+$/.test(link.url) && !/^mailto:.+@.+\..+$/.test(link.url)) {
+      if (!/^https?:\/\/.+\..+$/.test(link.value) && !/^mailto:.+@.+\..+$/.test(link.value)) {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: Invalid URL format. Must start with http(s):// or mailto:.` });
-      }
-      if (!link.icon || typeof link.icon !== 'string' || link.icon.trim() === '') {
-        return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
       }
     }
 
     const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app';
     const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username}`;
 
-    // Check if username is already taken globally
     const linkPageRef = db.collection('linkPages').doc(username);
     const linkPageSnap = await linkPageRef.get();
 
@@ -66,18 +174,73 @@ export const createOrUpdateLinkPage = async (req, res) => {
       }
     }
 
-    // Preserve existing link click counts if updating
+    let profilePicUrl = null;
+    const profilePicFile = uploadedFiles.profilePic;
+
+    if (profilePicFile) {
+      tempFilePaths.push(profilePicFile.tempFilePath);
+
+      if (!profilePicFile.mimetype.startsWith('image/')) {
+        return res.status(400).json({ success: false, message: 'Profile picture must be an image file.' });
+      }
+      try {
+        const result = await cloudinary.uploader.upload(profilePicFile.tempFilePath, {
+          folder: `zaplink/profile_pics`,
+        });
+        profilePicUrl = result.secure_url;
+      } catch (uploadError) {
+        console.error(`Error uploading profile pic from ${profilePicFile.tempFilePath} to Cloudinary:`, uploadError);
+        return res.status(500).json({ success: false, message: 'Failed to upload profile picture to Cloudinary.' });
+      }
+    } else {
+      const existingData = linkPageSnap.exists ? linkPageSnap.data() : null;
+      if (existingData && existingData.profilePic) {
+        profilePicUrl = existingData.profilePic;
+      }
+    }
+
+    const processedLinks = [];
+    for (const [index, link] of incomingLinks.entries()) {
+      let finalIcon = link.icon;
+      const customIconFile = uploadedFiles[`links[${index}][customIcon]`];
+
+      if (customIconFile) {
+        tempFilePaths.push(customIconFile.tempFilePath);
+
+        if (!customIconFile.mimetype.startsWith('image/')) {
+          return res.status(400).json({ success: false, message: `Link ${index + 1}: Custom icon must be an image file.` });
+        }
+        try {
+          const result = await cloudinary.uploader.upload(customIconFile.tempFilePath, {
+            folder: `zaplink/custom_icons`,
+          });
+          finalIcon = result.secure_url;
+        } catch (uploadError) {
+          console.error(`Error uploading custom icon from ${customIconFile.tempFilePath} to Cloudinary:`, uploadError);
+          return res.status(500).json({ success: false, message: `Failed to upload custom icon for link ${index + 1} to Cloudinary.` });
+        }
+      } else if (link.existingCustomIconUrl) {
+        finalIcon = link.existingCustomIconUrl;
+      }
+
+      processedLinks.push({
+        title: link.title,
+        url: link.value,
+        icon: finalIcon,
+      });
+    }
+
     const existingLinksMap = new Map(
       (linkPageSnap.exists && linkPageSnap.data().links || []).map(link => [link.url, link])
     );
 
-    const formattedLinks = links.map(newLink => {
+    const linksToSave = processedLinks.map(newLink => {
       const existingLink = existingLinksMap.get(newLink.url);
       return {
         title: newLink.title,
         url: newLink.url,
-        type: newLink.title,
         icon: newLink.icon,
+        clicks: existingLink ? existingLink.clicks : 0,
       };
     });
 
@@ -85,8 +248,8 @@ export const createOrUpdateLinkPage = async (req, res) => {
       uid,
       username,
       bio,
-      profilePic,
-      links: formattedLinks,
+      profilePic: profilePicUrl,
+      links: linksToSave,
       pageClicks: linkPageSnap.exists ? linkPageSnap.data().pageClicks : 0,
       createdAt: linkPageSnap.exists ? linkPageSnap.data().createdAt : new Date(),
       updatedAt: new Date(),
@@ -97,7 +260,20 @@ export const createOrUpdateLinkPage = async (req, res) => {
     res.status(200).json({ success: true, message: 'Link page saved successfully.', linkPageUrl });
   } catch (error) {
     console.error('Error in createOrUpdateLinkPage:', error);
-    res.status(500).json({ success: false, error: error.message });
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ success: false, message: 'One or more files are too large. Maximum size is 5MB per file.' });
+    }
+    
+    res.status(500).json({ success: false, error: error.message || 'Internal server error.' });
+  } finally {
+    for (const filePath of tempFilePaths) {
+      try {
+        await fs.unlink(filePath);
+        console.log(`Deleted temporary file: ${filePath}`);
+      } catch (unlinkErr) {
+        console.error(`Error deleting temp file ${filePath}:`, unlinkErr);
+      }
+    }
   }
 };
 
