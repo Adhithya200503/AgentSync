@@ -48,7 +48,7 @@ export const createShortUrl = async (req, res) => {
 
   const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   let shortUrl;
-  if (isBioGramLink) {
+  if (!isBioGramLink) {
     const shortUrlBase = `${appBaseUrl}/Zurl`;
     shortUrl = `${shortUrlBase}/${slug}`;
   } else {
