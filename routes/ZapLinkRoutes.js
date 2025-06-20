@@ -1,8 +1,8 @@
-import { createOrUpdateLinkPage, getLinkPageByUsername } from "../controller/zapLinkControllers.js";
+import {  createZapLink, getLinkPageByUsername } from "../controller/zapLinkControllers.js";
 import express from "express"
 const router = express.Router();
 
-router.post('/link-page',createOrUpdateLinkPage);
+router.post('/link-page',createZapLink);
 
 
 

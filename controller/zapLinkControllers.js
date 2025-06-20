@@ -1,9 +1,9 @@
 import admin, { db } from "../utils/firebase.js";
 
-export const createOrUpdateLinkPage = async (req, res) => {
+export const createZapLink = async (req, res) => {
   try {
     const uid = req.user.uid;
-    const { username, bio = '', profilePic = '', links = [] , template} = req.body;
+    const { username, bio = '', profilePic = '', links = [], template } = req.body;
 
     // Validate username
     if (!username || typeof username !== 'string' || username.trim() === '') {
@@ -24,7 +24,7 @@ export const createOrUpdateLinkPage = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
     }
 
-    // Validate profile picture URL
+    // Validate profile picture
     if (profilePic && typeof profilePic !== 'string') {
       return res.status(400).json({ success: false, message: 'Profile picture must be a URL string.' });
     }
@@ -55,48 +55,39 @@ export const createOrUpdateLinkPage = async (req, res) => {
     const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app';
     const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username}`;
 
-    // Check if username is already taken globally
+    // Check if username already exists (disallow updates)
     const linkPageRef = db.collection('linkPages').doc(username);
     const linkPageSnap = await linkPageRef.get();
 
     if (linkPageSnap.exists) {
-      const existingData = linkPageSnap.data();
-      if (existingData.uid !== uid) {
-        return res.status(403).json({ success: false, message: 'Username already taken by another user.' });
-      }
+      return res.status(403).json({ success: false, message: 'Username already exists. Cannot overwrite existing Zap link.' });
     }
 
-    // Preserve existing link click counts if updating
-    const existingLinksMap = new Map(
-      (linkPageSnap.exists && linkPageSnap.data().links || []).map(link => [link.url, link])
-    );
+    // Format links
+    const formattedLinks = links.map(link => ({
+      title: link.title,
+      url: link.url,
+      type: link.title,
+      icon: link.icon,
+    }));
 
-    const formattedLinks = links.map(newLink => {
-      const existingLink = existingLinksMap.get(newLink.url);
-      return {
-        title: newLink.title,
-        url: newLink.url,
-        type: newLink.title,
-        icon: newLink.icon,
-      };
-    });
-
+    // Save new link page
     await linkPageRef.set({
       uid,
       username,
       bio,
       profilePic,
       links: formattedLinks,
-      pageClicks: linkPageSnap.exists ? linkPageSnap.data().pageClicks : 0,
-      createdAt: linkPageSnap.exists ? linkPageSnap.data().createdAt : new Date(),
+      pageClicks: 0,
+      createdAt: new Date(),
       updatedAt: new Date(),
       linkPageUrl,
       template
-    }, { merge: true });
+    });
 
-    res.status(200).json({ success: true, message: 'Link page saved successfully.', linkPageUrl });
+    res.status(201).json({ success: true, message: 'Zap link created successfully.', linkPageUrl });
   } catch (error) {
-    console.error('Error in createOrUpdateLinkPage:', error);
+    console.error('Error in createZapLink:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
