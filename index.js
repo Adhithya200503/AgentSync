@@ -46,4 +46,6 @@ app.use("/bio-gram",authenticateToken,BioGramRoutes)
 app.use("/zap-store",ZapStoreRoutes);
 app.use("/ai",authenticateToken,aiRoutes);
 app.get("/:code", redirectLink);
+app.get("/biogram/:shortId",redirectShortUrl);
+
 app.listen(3000, () => console.log(`server running successfully on port ${PORT} `))

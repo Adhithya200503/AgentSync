@@ -30,7 +30,7 @@ const normalizeHost = (host) => {
 export const createShortUrl = async (req, res) => {
   const user = req.user;
 
-  const { originalUrl, customUrl, protected: isProtected, zaplinkIds, name , folderId } = req.body;
+  const { originalUrl, customUrl, protected: isProtected, zaplinkIds, name, folderId, isBioGramLink } = req.body;
 
   if (!originalUrl || !isValidUrl(originalUrl)) {
     return res.status(400).json({ error: 'Invalid or missing originalUrl' });
@@ -47,9 +47,15 @@ export const createShortUrl = async (req, res) => {
   }
 
   const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-  const shortUrlBase = `${appBaseUrl}/Zurl`;
+  let shortUrl;
+  if (isBioGramLink) {
+    const shortUrlBase = `${appBaseUrl}/Zurl`;
+    shortUrl = `${shortUrlBase}/${slug}`;
+  } else {
+    const shortUrlBase = `${appBaseUrl}/biogram`;
+    shortUrl = `${shortUrlBase}/${slug}`;
+  }
 
-  const shortUrl = `${shortUrlBase}/${slug}`;
 
   let qrCodeDataURL;
   try {
@@ -124,7 +130,6 @@ export const createShortUrl = async (req, res) => {
 
 export const redirectShortUrl = async (req, res) => {
   const { shortId } = req.params;
-  const requestHost = req.headers.host;
 
   if (!shortId) {
     return res.status(400).send("Missing shortId");
@@ -139,19 +144,12 @@ export const redirectShortUrl = async (req, res) => {
 
   const data = doc.data();
 
-  const normalizedRequestHost = normalizeHost(requestHost);
-  let expectedDomainMatch = false;
+  
+  const validPaths = [`/Zurl/${shortId}`, `/biogram/${shortId}`];
+  const isValidPath = validPaths.some((path) => req.originalUrl.includes(path));
 
-  const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-  const normalizedAppBaseHost = normalizeHost(new URL(appBaseUrl).host);
-
-  const isDefaultPath = req.originalUrl.includes(`/Zurl/${shortId}`);
-
-  expectedDomainMatch = normalizedRequestHost === normalizedAppBaseHost && isDefaultPath;
-
-  if (!expectedDomainMatch) {
-    console.warn(`Attempted access of shortId ${shortId} on host ${requestHost} (expected default application domain)`);
-    return res.status(404).send("Short link not found for this domain or path.");
+  if (!isValidPath) {
+    return res.status(404).send("Invalid short link path.");
   }
 
   if (!data.isActive) {
@@ -159,17 +157,14 @@ export const redirectShortUrl = async (req, res) => {
   }
 
   if (data.protected) {
-    const protectedRedirectBase = `https://agentsync-5ab53.web.app/Zurl/unlock`;
+    const protectedRedirectBase = `${req.protocol}://${req.get('host')}/Zurl/unlock`;
     return res.redirect(`${protectedRedirectBase}/${shortId}`);
   }
 
-  let ip =
-    req.headers["x-forwarded-for"]?.split(",")[0] ||
-    req.socket.remoteAddress ||
-    "";
-
+  let ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress || "";
   let country = "Unknown";
   let city = "Unknown";
+
   try {
     const geoRes = await fetch(`https://ipwho.is/${ip}`);
     const geoData = await geoRes.json();
@@ -181,6 +176,7 @@ export const redirectShortUrl = async (req, res) => {
     console.error("Error fetching geo data:", error);
   }
 
+  
   const parser = new UAParser(req.headers["user-agent"]);
   const browserName = parser.getBrowser().name || "Unknown";
   const deviceType = parser.getDevice().type || "Unknown";
@@ -196,7 +192,11 @@ export const redirectShortUrl = async (req, res) => {
     lastClickedAt: new Date().toISOString(),
   };
 
-  await docRef.update(updateData);
+  try {
+    await docRef.update(updateData);
+  } catch (updateError) {
+    console.error("Error updating analytics:", updateError);
+  }
 
   return res.redirect(data.originalUrl);
 };

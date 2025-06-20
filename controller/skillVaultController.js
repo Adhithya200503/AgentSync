@@ -2,6 +2,7 @@ import { db } from "../utils/firebase.js";
 
 export const createPortFolio = async (req, res) => {
   const userId = req.user.user_id;
+  const idToken = req.headers.authorization?.split(" ")[1]
   try {
     const {
       name,
@@ -22,7 +23,7 @@ export const createPortFolio = async (req, res) => {
       education,
       languages,
       resume,
-      experience, 
+      experience,
       template = "default"
     } = req.body;
 
@@ -60,7 +61,33 @@ export const createPortFolio = async (req, res) => {
 
     const docRef = await db.collection("portfolios").add(portfolioData);
     const url = `https://biograms.web.app/${docRef.id}`;
-    await docRef.update({ url }); 
+
+    let urlWithAnalytics;
+
+    try {
+      const shortUrlRes = await axios.post(
+        "https://agentsync.onrender.com/zurl/create-short-url",
+        {
+          originalUrl: url,
+          customUrl: `${name}-${docRef.id}`,
+          isBioGramLink:true,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        }
+      );
+
+      urlWithAnalytics = shortUrlRes.data.shortUrl || url;
+    } catch (shortErr) {
+      console.error("Error creating short URL:", shortErr.message);
+      urlWithAnalytics = url; 
+    }
+
+
+
+    await docRef.update({ url: urlWithAnalytics });
 
     res.status(200).json({
       success: true,
@@ -103,7 +130,7 @@ export const editPortFolio = async (req, res) => {
       education,
       languages,
       resume,
-      experience,  
+      experience,
       template
     } = req.body;
 
