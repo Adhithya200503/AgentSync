@@ -94,7 +94,7 @@ export const createPortFolio = async (req, res) => {
       success: true,
       message: "Portfolio created successfully.",
       id: docRef.id,
-      url,
+      url:urlWithAnalytics,
     });
   } catch (error) {
     console.error("Error creating portfolio:", error);
