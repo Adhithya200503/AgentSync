@@ -70,7 +70,7 @@ export const createPortFolio = async (req, res) => {
         "https://agentsync.onrender.com/zurl/create-short-url",
         {
           originalUrl: url,
-          customUrl: `${name}-${docRef.id}`,
+          customUrl:docRef.id,
           isBioGramLink:true,
         },
         {
