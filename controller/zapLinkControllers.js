@@ -25,7 +25,7 @@ export const createZapLink = async (req, res) => {
     if (profilePicFile) {
       try {
        
-        const result = await cloudinary.v2.uploader.upload(profilePicFile.data, {
+        const result = await cloudinary.uploader.upload(profilePicFile.data, {
           folder: 'zaplink',
           resource_type: 'auto', 
         
@@ -85,7 +85,7 @@ export const createZapLink = async (req, res) => {
         if (customLinkImageFile) {
           try {
            
-            const result = await cloudinary.v2.uploader.upload(customLinkImageFile.data, {
+            const result = await cloudinary.uploader.upload(customLinkImageFile.data, {
               folder: 'zaplink/custom_link_images',
               resource_type: 'auto', 
             });
