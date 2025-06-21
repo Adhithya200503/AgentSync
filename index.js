@@ -23,7 +23,13 @@ app.use(cors({
   methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT'],
   credentials: true
 }));
-app.use(fileUpload());
+
+app.use(fileUpload({
+  createParentPath: true,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  useTempFiles: false,
+  tempFileDir: '/tmp/',
+}));
 app.use(express.json());
 
 app.use(cookieParser());
