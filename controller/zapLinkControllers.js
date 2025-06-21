@@ -1,15 +1,18 @@
 import admin, { db } from "../utils/firebase.js";
 import cloudinary from "../utils/cloudinary.js";
 
+// Ensure you have initialized and configured Cloudinary (e.g., const cloudinary = require('cloudinary').v2;)
+// Ensure you have initialized your Firestore DB (e.g., const db = admin.firestore();)
+
 export const createZapLink = async (req, res) => {
   try {
     // --- DEBUGGING: Log req.files at the start ---
     console.log('--- Backend: req.files ---');
-    console.log(req.files);
+    console.log(req.files); // This will show the raw file objects received
     console.log('---------------------------');
     // --- END DEBUGGING ---
 
-    const uid = req.user.uid;
+    const uid = req.user.uid; // Assuming req.user is populated by your authentication middleware
     const { username, bio, template } = req.body;
 
     let links = [];
@@ -24,38 +27,41 @@ export const createZapLink = async (req, res) => {
 
     let profilePicUrl = ''; // Default to empty for new creation
     let profilePicPublicId = ''; // Default to empty for new creation
-    const profilePicFile = req.files && req.files.profilePic;
+    const profilePicFile = req.files && req.files.profilePic; // Check if profilePic file exists in req.files
 
     if (profilePicFile) {
       try {
+        // Basic validation for the uploaded profile picture file
         if (
-          !profilePicFile ||
           !profilePicFile.data ||
           !Buffer.isBuffer(profilePicFile.data) ||
           !profilePicFile.mimetype ||
           profilePicFile.data.length === 0
         ) {
-          console.error('Validation failed for profile picture file.'); // Added log
+          console.error('Validation failed for profile picture file.');
           return res.status(400).json({ success: false, message: 'Invalid or empty profile picture file.' });
         }
 
+        // Convert buffer data to base64 string for Cloudinary upload
         const base64Data = profilePicFile.data.toString('base64');
         const base64ProfilePic = `data:${profilePicFile.mimetype};base64,${base64Data}`;
 
+        // Upload profile picture to Cloudinary
         const result = await cloudinary.uploader.upload(base64ProfilePic, {
-          folder: 'zaplink/profile_pictures',
-          resource_type: 'auto',
+          folder: 'zaplink/profile_pictures', // Cloudinary folder
+          resource_type: 'auto', // Automatically determine resource type
         });
 
-        profilePicUrl = result.secure_url;
-        profilePicPublicId = result.public_id;
-        console.log('Profile picture uploaded:', profilePicUrl, profilePicPublicId); // Added log
+        profilePicUrl = result.secure_url; // Get the secure URL of the uploaded image
+        profilePicPublicId = result.public_id; // Get the public ID for potential future deletion
+        console.log('Profile picture uploaded:', profilePicUrl, profilePicPublicId); // Log success
       } catch (uploadError) {
         console.error('Cloudinary profile picture upload error:', uploadError);
         return res.status(500).json({ success: false, message: 'Failed to upload profile picture.' });
       }
     }
 
+    // Validate username
     if (!username || typeof username !== 'string' || username.trim() === '') {
       return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
     }
@@ -66,6 +72,7 @@ export const createZapLink = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Username must be between 3 and 30 characters long.' });
     }
 
+    // Validate bio
     if (typeof bio !== 'string') {
       return res.status(400).json({ success: false, message: 'Bio must be a string.' });
     }
@@ -73,12 +80,18 @@ export const createZapLink = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
     }
 
+    // Validate links array
     if (!Array.isArray(links) || links.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one link is required.' });
     }
 
     const processedLinks = [];
     for (const [index, link] of links.entries()) {
+      // --- NEW DEBUGGING LOG: Crucial for understanding 'platform' value ---
+      console.log(`Backend: link.platform for link at index ${index}:`, link.platform);
+      // --- END NEW DEBUGGING LOG ---
+
+      // Validate individual link properties
       if (!link.title || typeof link.title !== 'string' || link.title.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
       }
@@ -86,6 +99,7 @@ export const createZapLink = async (req, res) => {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
       }
 
+      // More robust URL validation
       const urlRegex = /^(https?|mailto|tel|sms|whatsapp):\/\/[^\s$.?#].[^\s]*$/i;
       if (!urlRegex.test(link.url) &&
         !link.url.startsWith('mailto:') &&
@@ -104,56 +118,68 @@ export const createZapLink = async (req, res) => {
 
       let linkImageUrl = '';
       let linkImagePublicId = '';
+      // Get the specific custom link image file by its dynamic name (e.g., linkImage_0)
       const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
 
+      // Only attempt to upload image if it's a 'Custom' platform link
       if (link.platform === 'Custom') {
         if (customLinkImageFile) {
-          console.log(`Processing custom link image for index ${index}:`, customLinkImageFile.name); // Added log
+          console.log(`Processing custom link image for index ${index}:`, customLinkImageFile.name);
           try {
+            // Basic validation for the uploaded custom link image file
             if (
               !customLinkImageFile.data ||
               !Buffer.isBuffer(customLinkImageFile.data) ||
               !customLinkImageFile.mimetype ||
               customLinkImageFile.data.length === 0
             ) {
-              console.error(`Validation failed for custom link image file at index ${index}.`); // Added log
+              console.error(`Validation failed for custom link image file at index ${index}.`);
               return res.status(400).json({ success: false, message: `Invalid or empty image for link ${index + 1}.` });
             }
 
+            // Convert buffer data to base64 string for Cloudinary upload
             const base64Image = customLinkImageFile.data.toString('base64');
             const base64CustomLinkImage = `data:${customLinkImageFile.mimetype};base64,${base64Image}`;
 
+            // Upload custom link image to Cloudinary
             const result = await cloudinary.uploader.upload(base64CustomLinkImage, {
-              folder: 'zaplink/custom_link_images',
+              folder: 'zaplink/custom_link_images', // Cloudinary folder
               resource_type: 'auto',
             });
             linkImageUrl = result.secure_url;
             linkImagePublicId = result.public_id;
-            console.log(`Custom link image uploaded for index ${index}:`, linkImageUrl, linkImagePublicId); // Added log
+            console.log(`Custom link image uploaded for index ${index}:`, linkImageUrl, linkImagePublicId);
           } catch (uploadError) {
             console.error(`Cloudinary custom link image upload error for link ${index + 1}:`, uploadError);
-            // TEMPORARY: Removed 'return res.status(500)' here to allow further logging
-            // The request will continue, but linkImageUrl/linkImagePublicId will remain empty.
-            // We will re-add the return after debugging.
+            // If an upload fails here, you might want to return an error,
+            // or proceed without the image, depending on your app's requirements.
+            // For now, it will proceed and linkImageUrl/linkImagePublicId will remain empty on error.
+            // If you want to block the request on error, uncomment the line below:
+            // return res.status(500).json({ success: false, message: `Failed to upload image for link ${index + 1}.` });
           }
         } else {
-            console.log(`No custom link image file provided for link at index ${index} or it's not a 'Custom' platform.`); // Added log
+          console.log(`No custom link image file provided for link at index ${index} (optional for 'Custom' links if no new image selected).`);
         }
+      } else {
+        console.log(`Link platform is not 'Custom' for index ${index}. Image upload logic for this link skipped.`);
       }
 
+      // Push the processed link data to the array
       processedLinks.push({
         title: link.title,
         url: link.url,
-        type: link.platform || link.title,
+        type: link.platform, // IMPORTANT: Ensure this is 'link.platform' to match the frontend logic
         icon: link.icon,
-        linkImage: linkImageUrl,
-        linkImagePublicId: linkImagePublicId
+        linkImage: linkImageUrl, // This will be the Cloudinary URL or an empty string
+        linkImagePublicId: linkImagePublicId // This will be the Cloudinary public ID or an empty string
       });
     }
 
+    // Define the frontend base URL for constructing the Zap Link page URL
     const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app';
     const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username}`;
 
+    // Check if the username is already taken in Firestore
     const linkPageRef = db.collection('linkPages').doc(username);
     const linkPageSnap = await linkPageRef.get();
 
@@ -161,29 +187,32 @@ export const createZapLink = async (req, res) => {
       return res.status(409).json({ success: false, message: 'Username already taken. Please choose a different one.' });
     }
 
-    // --- DEBUGGING: Log processedLinks before saving to DB ---
+    // --- DEBUGGING: Log processedLinks right before saving to DB ---
     console.log('--- Backend: processedLinks before DB save ---');
-    console.log(JSON.stringify(processedLinks, null, 2));
+    console.log(JSON.stringify(processedLinks, null, 2)); // Pretty print JSON for readability
     console.log('---------------------------------------------');
     // --- END DEBUGGING ---
 
+    // Save the Zap Link data to Firestore
     await linkPageRef.set({
-      uid,
+      uid, // User ID from authentication
       username,
-      bio: bio || '',
+      bio: bio || '', // Ensure bio is a string, default to empty
       profilePicUrl: profilePicUrl,
       profilePicPublicId: profilePicPublicId,
-      links: processedLinks,
-      pageClicks: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      links: processedLinks, // Array of processed links
+      pageClicks: 0, // Initialize click count
+      createdAt: new Date(), // Timestamp of creation
+      updatedAt: new Date(), // Timestamp of last update
       linkPageUrl,
-      template
+      template // Selected template
     });
 
+    // Send a success response
     res.status(200).json({ success: true, message: 'Zap link created successfully.', linkPageUrl });
   } catch (error) {
-    console.error('Error in createZapLink (general catch):', error); // Renamed log for clarity
+    // General error handling for any unexpected issues
+    console.error('Error in createZapLink (general catch):', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
