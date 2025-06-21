@@ -4,7 +4,6 @@ import cloudinary from "../utils/cloudinary.js";
 export const createZapLink = async (req, res) => {
   try {
     const uid = req.user.uid;
-
     const { username, bio, template } = req.body;
 
     let links = [];
@@ -18,28 +17,33 @@ export const createZapLink = async (req, res) => {
     }
 
     let profilePicUrl = req.body.profilePicUrl || '';
-
     const profilePicFile = req.files && req.files.profilePic;
 
     if (profilePicFile) {
       try {
-        if (!Buffer.isBuffer(profilePicFile.data) || !profilePicFile.mimetype) {
-          return res.status(400).json({ success: false, message: 'Invalid profile picture file format. Expected a buffer with mimetype.' });
+        if (
+          !profilePicFile ||
+          !profilePicFile.data ||
+          !Buffer.isBuffer(profilePicFile.data) ||
+          !profilePicFile.mimetype ||
+          profilePicFile.data.length === 0
+        ) {
+          return res.status(400).json({ success: false, message: 'Invalid or empty profile picture file.' });
         }
 
-        const base64ProfilePic = `data:${profilePicFile.mimetype};base64,${profilePicFile.data.toString('base64')}`;
+        const base64Data = profilePicFile.data.toString('base64');
+        const base64ProfilePic = `data:${profilePicFile.mimetype};base64,${base64Data}`;
 
         const result = await cloudinary.uploader.upload(base64ProfilePic, {
           folder: 'zaplink/profile_pictures',
           resource_type: 'auto',
         });
+
         profilePicUrl = result.secure_url;
       } catch (uploadError) {
         console.error('Cloudinary profile picture upload error:', uploadError);
         return res.status(500).json({ success: false, message: 'Failed to upload profile picture.' });
       }
-    } else if (req.body.profilePicUrl) {
-      profilePicUrl = req.body.profilePicUrl;
     }
 
     if (!username || typeof username !== 'string' || username.trim() === '') {
@@ -71,26 +75,40 @@ export const createZapLink = async (req, res) => {
       if (!link.url || typeof link.url !== 'string' || link.url.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
       }
+
       const urlRegex = /^(https?|mailto|tel|sms|whatsapp):\/\/[^\s$.?#].[^\s]*$/i;
-      if (!urlRegex.test(link.url) && !link.url.startsWith('mailto:') && !link.url.startsWith('tel:') && !link.url.startsWith('sms:') && !link.url.startsWith('whatsapp:')) {
-         return res.status(400).json({ success: false, message: `Link ${index + 1}: Invalid URL format. Must be a valid web URL, mailto:, tel:, sms:, or whatsapp:.` });
+      if (!urlRegex.test(link.url) &&
+        !link.url.startsWith('mailto:') &&
+        !link.url.startsWith('tel:') &&
+        !link.url.startsWith('sms:') &&
+        !link.url.startsWith('whatsapp:')) {
+        return res.status(400).json({
+          success: false,
+          message: `Link ${index + 1}: Invalid URL format. Must be a valid web URL, mailto:, tel:, sms:, or whatsapp:.`
+        });
       }
+
       if (!link.icon || typeof link.icon !== 'string' || link.icon.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
       }
 
       let linkImageUrl = '';
-
       const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
 
       if (link.platform === 'Custom') {
         if (customLinkImageFile) {
           try {
-            if (!Buffer.isBuffer(customLinkImageFile.data) || !customLinkImageFile.mimetype) {
-              return res.status(400).json({ success: false, message: `Invalid custom link image file format for link ${index + 1}. Expected a buffer with mimetype.` });
+            if (
+              !customLinkImageFile.data ||
+              !Buffer.isBuffer(customLinkImageFile.data) ||
+              !customLinkImageFile.mimetype ||
+              customLinkImageFile.data.length === 0
+            ) {
+              return res.status(400).json({ success: false, message: `Invalid or empty image for link ${index + 1}.` });
             }
 
-            const base64CustomLinkImage = `data:${customLinkImageFile.mimetype};base64,${customLinkImageFile.data.toString('base64')}`;
+            const base64Image = customLinkImageFile.data.toString('base64');
+            const base64CustomLinkImage = `data:${customLinkImageFile.mimetype};base64,${base64Image}`;
 
             const result = await cloudinary.uploader.upload(base64CustomLinkImage, {
               folder: 'zaplink/custom_link_images',
@@ -104,8 +122,6 @@ export const createZapLink = async (req, res) => {
         } else if (req.body[`linkImageExistingUrl_${index}`]) {
           linkImageUrl = req.body[`linkImageExistingUrl_${index}`];
         }
-      } else {
-        linkImageUrl = '';
       }
 
       processedLinks.push({
