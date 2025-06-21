@@ -3,6 +3,12 @@ import cloudinary from "../utils/cloudinary.js";
 
 export const createZapLink = async (req, res) => {
   try {
+    // --- DEBUGGING: Log req.files at the start ---
+    console.log('--- Backend: req.files ---');
+    console.log(req.files);
+    console.log('---------------------------');
+    // --- END DEBUGGING ---
+
     const uid = req.user.uid;
     const { username, bio, template } = req.body;
 
@@ -16,8 +22,8 @@ export const createZapLink = async (req, res) => {
       }
     }
 
-    let profilePicUrl = req.body.profilePicUrl || '';
-    let profilePicPublicId = req.body.profilePicPublicId || '';
+    let profilePicUrl = ''; // Default to empty for new creation
+    let profilePicPublicId = ''; // Default to empty for new creation
     const profilePicFile = req.files && req.files.profilePic;
 
     if (profilePicFile) {
@@ -96,10 +102,10 @@ export const createZapLink = async (req, res) => {
 
       let linkImageUrl = '';
       let linkImagePublicId = '';
-      const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
+      const customLinkImageFile = req.files && req.files[`linkImage_${index}`]; // Check for file by specific name
 
-      if (link.platform === 'Custom') {
-        if (customLinkImageFile) {
+      if (link.platform === 'Custom') { // Check if it's a custom link
+        if (customLinkImageFile) { // Check if a file was actually uploaded for this specific custom link
           try {
             if (
               !customLinkImageFile.data ||
@@ -123,19 +129,18 @@ export const createZapLink = async (req, res) => {
             console.error(`Cloudinary custom link image upload error for link ${index + 1}:`, uploadError);
             return res.status(500).json({ success: false, message: `Failed to upload image for link ${index + 1}.` });
           }
-        } else if (req.body[`linkImageExistingUrl_${index}`]) {
-          linkImageUrl = req.body[`linkImageExistingUrl_${index}`];
-          linkImagePublicId = req.body[`linkImageExistingPublicId_${index}`] || '';
         }
+        // Removed the `else if (req.body[`linkImageExistingUrl_${index}`])` block
+        // as we are only creating and not supporting existing URLs from the client for new links.
       }
 
       processedLinks.push({
         title: link.title,
         url: link.url,
-        type: link.platform || link.title,
+        type: link.platform || link.title, // 'type' can be 'platform' or 'title' if platform is not explicit
         icon: link.icon,
-        linkImage: linkImageUrl,
-        linkImagePublicId: linkImagePublicId
+        linkImage: linkImageUrl, // Will be empty string if no image was uploaded for a custom link
+        linkImagePublicId: linkImagePublicId // Will be empty string if no image was uploaded
       });
     }
 
@@ -148,6 +153,12 @@ export const createZapLink = async (req, res) => {
     if (linkPageSnap.exists) {
       return res.status(409).json({ success: false, message: 'Username already taken. Please choose a different one.' });
     }
+
+    // --- DEBUGGING: Log processedLinks before saving to DB ---
+    console.log('--- Backend: processedLinks before DB save ---');
+    console.log(JSON.stringify(processedLinks, null, 2)); // Pretty print JSON
+    console.log('---------------------------------------------');
+    // --- END DEBUGGING ---
 
     await linkPageRef.set({
       uid,
@@ -169,7 +180,6 @@ export const createZapLink = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
-
 
 export const getLinkPageByUsername = async (req, res) => {
   try {
