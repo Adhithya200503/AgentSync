@@ -1,6 +1,6 @@
 import admin, { db } from "../utils/firebase.js";
-import cloudinary from "../utils/cloudinary.js"
-import path from "path";
+import cloudinary from "../utils/cloudinary.js";
+
 export const createZapLink = async (req, res) => {
   try {
     const uid = req.user.uid;
@@ -19,16 +19,19 @@ export const createZapLink = async (req, res) => {
 
     let profilePicUrl = req.body.profilePicUrl || '';
 
-
     const profilePicFile = req.files && req.files.profilePic;
 
     if (profilePicFile) {
       try {
-       
-        const result = await cloudinary.uploader.upload(profilePicFile.data, {
-          folder: 'zaplink',
-          resource_type: 'auto', 
-        
+        if (!Buffer.isBuffer(profilePicFile.data) || !profilePicFile.mimetype) {
+          return res.status(400).json({ success: false, message: 'Invalid profile picture file format. Expected a buffer with mimetype.' });
+        }
+
+        const base64ProfilePic = `data:${profilePicFile.mimetype};base64,${profilePicFile.data.toString('base64')}`;
+
+        const result = await cloudinary.uploader.upload(base64ProfilePic, {
+          folder: 'zaplink/profile_pictures',
+          resource_type: 'auto',
         });
         profilePicUrl = result.secure_url;
       } catch (uploadError) {
@@ -39,8 +42,6 @@ export const createZapLink = async (req, res) => {
       profilePicUrl = req.body.profilePicUrl;
     }
 
-
-    
     if (!username || typeof username !== 'string' || username.trim() === '') {
       return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
     }
@@ -70,8 +71,9 @@ export const createZapLink = async (req, res) => {
       if (!link.url || typeof link.url !== 'string' || link.url.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
       }
-      if (!/^https?:\/\/.+\..+$/.test(link.url) && !/^mailto:.+@.+\..+$/.test(link.url)) {
-        return res.status(400).json({ success: false, message: `Link ${index + 1}: Invalid URL format. Must start with http(s):// or mailto:.` });
+      const urlRegex = /^(https?|mailto|tel|sms|whatsapp):\/\/[^\s$.?#].[^\s]*$/i;
+      if (!urlRegex.test(link.url) && !link.url.startsWith('mailto:') && !link.url.startsWith('tel:') && !link.url.startsWith('sms:') && !link.url.startsWith('whatsapp:')) {
+         return res.status(400).json({ success: false, message: `Link ${index + 1}: Invalid URL format. Must be a valid web URL, mailto:, tel:, sms:, or whatsapp:.` });
       }
       if (!link.icon || typeof link.icon !== 'string' || link.icon.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
@@ -84,10 +86,15 @@ export const createZapLink = async (req, res) => {
       if (link.platform === 'Custom') {
         if (customLinkImageFile) {
           try {
-           
-            const result = await cloudinary.uploader.upload(customLinkImageFile.data, {
+            if (!Buffer.isBuffer(customLinkImageFile.data) || !customLinkImageFile.mimetype) {
+              return res.status(400).json({ success: false, message: `Invalid custom link image file format for link ${index + 1}. Expected a buffer with mimetype.` });
+            }
+
+            const base64CustomLinkImage = `data:${customLinkImageFile.mimetype};base64,${customLinkImageFile.data.toString('base64')}`;
+
+            const result = await cloudinary.uploader.upload(base64CustomLinkImage, {
               folder: 'zaplink/custom_link_images',
-              resource_type: 'auto', 
+              resource_type: 'auto',
             });
             linkImageUrl = result.secure_url;
           } catch (uploadError) {
@@ -104,7 +111,7 @@ export const createZapLink = async (req, res) => {
       processedLinks.push({
         title: link.title,
         url: link.url,
-        type: link.title,
+        type: link.platform || link.title,
         icon: link.icon,
         linkImage: linkImageUrl,
       });
