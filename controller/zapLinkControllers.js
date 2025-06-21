@@ -35,6 +35,7 @@ export const createZapLink = async (req, res) => {
           !profilePicFile.mimetype ||
           profilePicFile.data.length === 0
         ) {
+          console.error('Validation failed for profile picture file.'); // Added log
           return res.status(400).json({ success: false, message: 'Invalid or empty profile picture file.' });
         }
 
@@ -48,6 +49,7 @@ export const createZapLink = async (req, res) => {
 
         profilePicUrl = result.secure_url;
         profilePicPublicId = result.public_id;
+        console.log('Profile picture uploaded:', profilePicUrl, profilePicPublicId); // Added log
       } catch (uploadError) {
         console.error('Cloudinary profile picture upload error:', uploadError);
         return res.status(500).json({ success: false, message: 'Failed to upload profile picture.' });
@@ -102,10 +104,11 @@ export const createZapLink = async (req, res) => {
 
       let linkImageUrl = '';
       let linkImagePublicId = '';
-      const customLinkImageFile = req.files && req.files[`linkImage_${index}`]; // Check for file by specific name
+      const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
 
-      if (link.platform === 'Custom') { // Check if it's a custom link
-        if (customLinkImageFile) { // Check if a file was actually uploaded for this specific custom link
+      if (link.platform === 'Custom') {
+        if (customLinkImageFile) {
+          console.log(`Processing custom link image for index ${index}:`, customLinkImageFile.name); // Added log
           try {
             if (
               !customLinkImageFile.data ||
@@ -113,6 +116,7 @@ export const createZapLink = async (req, res) => {
               !customLinkImageFile.mimetype ||
               customLinkImageFile.data.length === 0
             ) {
+              console.error(`Validation failed for custom link image file at index ${index}.`); // Added log
               return res.status(400).json({ success: false, message: `Invalid or empty image for link ${index + 1}.` });
             }
 
@@ -125,22 +129,25 @@ export const createZapLink = async (req, res) => {
             });
             linkImageUrl = result.secure_url;
             linkImagePublicId = result.public_id;
+            console.log(`Custom link image uploaded for index ${index}:`, linkImageUrl, linkImagePublicId); // Added log
           } catch (uploadError) {
             console.error(`Cloudinary custom link image upload error for link ${index + 1}:`, uploadError);
-            return res.status(500).json({ success: false, message: `Failed to upload image for link ${index + 1}.` });
+            // TEMPORARY: Removed 'return res.status(500)' here to allow further logging
+            // The request will continue, but linkImageUrl/linkImagePublicId will remain empty.
+            // We will re-add the return after debugging.
           }
+        } else {
+            console.log(`No custom link image file provided for link at index ${index} or it's not a 'Custom' platform.`); // Added log
         }
-        // Removed the `else if (req.body[`linkImageExistingUrl_${index}`])` block
-        // as we are only creating and not supporting existing URLs from the client for new links.
       }
 
       processedLinks.push({
         title: link.title,
         url: link.url,
-        type: link.platform || link.title, // 'type' can be 'platform' or 'title' if platform is not explicit
+        type: link.platform || link.title,
         icon: link.icon,
-        linkImage: linkImageUrl, // Will be empty string if no image was uploaded for a custom link
-        linkImagePublicId: linkImagePublicId // Will be empty string if no image was uploaded
+        linkImage: linkImageUrl,
+        linkImagePublicId: linkImagePublicId
       });
     }
 
@@ -156,7 +163,7 @@ export const createZapLink = async (req, res) => {
 
     // --- DEBUGGING: Log processedLinks before saving to DB ---
     console.log('--- Backend: processedLinks before DB save ---');
-    console.log(JSON.stringify(processedLinks, null, 2)); // Pretty print JSON
+    console.log(JSON.stringify(processedLinks, null, 2));
     console.log('---------------------------------------------');
     // --- END DEBUGGING ---
 
@@ -176,7 +183,7 @@ export const createZapLink = async (req, res) => {
 
     res.status(200).json({ success: true, message: 'Zap link created successfully.', linkPageUrl });
   } catch (error) {
-    console.error('Error in createZapLink:', error);
+    console.error('Error in createZapLink (general catch):', error); // Renamed log for clarity
     res.status(500).json({ success: false, error: error.message });
   }
 };
