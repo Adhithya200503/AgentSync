@@ -1,11 +1,46 @@
 import admin, { db } from "../utils/firebase.js";
-
+import cloudinary from "../utils/cloudinary.js"
+import path from "path";
 export const createZapLink = async (req, res) => {
   try {
     const uid = req.user.uid;
-    const { username, bio = '', profilePic = '', links = [], template } = req.body;
 
-    // Validate username
+    const { username, bio, template } = req.body;
+
+    let links = [];
+    if (req.body.links) {
+      try {
+        links = JSON.parse(req.body.links);
+      } catch (parseError) {
+        console.error('Error parsing links JSON:', parseError);
+        return res.status(400).json({ success: false, message: 'Invalid links data format.' });
+      }
+    }
+
+    let profilePicUrl = req.body.profilePicUrl || '';
+
+
+    const profilePicFile = req.files && req.files.profilePic;
+
+    if (profilePicFile) {
+      try {
+       
+        const result = await cloudinary.v2.uploader.upload(profilePicFile.data, {
+          folder: 'zaplink',
+          resource_type: 'auto', 
+        
+        });
+        profilePicUrl = result.secure_url;
+      } catch (uploadError) {
+        console.error('Cloudinary profile picture upload error:', uploadError);
+        return res.status(500).json({ success: false, message: 'Failed to upload profile picture.' });
+      }
+    } else if (req.body.profilePicUrl) {
+      profilePicUrl = req.body.profilePicUrl;
+    }
+
+
+    
     if (!username || typeof username !== 'string' || username.trim() === '') {
       return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
     }
@@ -16,7 +51,6 @@ export const createZapLink = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Username must be between 3 and 30 characters long.' });
     }
 
-    // Validate bio
     if (typeof bio !== 'string') {
       return res.status(400).json({ success: false, message: 'Bio must be a string.' });
     }
@@ -24,19 +58,11 @@ export const createZapLink = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
     }
 
-    // Validate profile picture
-    if (profilePic && typeof profilePic !== 'string') {
-      return res.status(400).json({ success: false, message: 'Profile picture must be a URL string.' });
-    }
-    if (profilePic && !/^https?:\/\/.+\..+$/.test(profilePic)) {
-      return res.status(400).json({ success: false, message: 'Invalid profile picture URL format.' });
-    }
-
-    // Validate links
     if (!Array.isArray(links) || links.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one link is required.' });
     }
 
+    const processedLinks = [];
     for (const [index, link] of links.entries()) {
       if (!link.title || typeof link.title !== 'string' || link.title.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
@@ -50,42 +76,64 @@ export const createZapLink = async (req, res) => {
       if (!link.icon || typeof link.icon !== 'string' || link.icon.trim() === '') {
         return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
       }
+
+      let linkImageUrl = '';
+
+      const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
+
+      if (link.platform === 'Custom') {
+        if (customLinkImageFile) {
+          try {
+           
+            const result = await cloudinary.v2.uploader.upload(customLinkImageFile.data, {
+              folder: 'zaplink/custom_link_images',
+              resource_type: 'auto', 
+            });
+            linkImageUrl = result.secure_url;
+          } catch (uploadError) {
+            console.error(`Cloudinary custom link image upload error for link ${index + 1}:`, uploadError);
+            return res.status(500).json({ success: false, message: `Failed to upload image for link ${index + 1}.` });
+          }
+        } else if (req.body[`linkImageExistingUrl_${index}`]) {
+          linkImageUrl = req.body[`linkImageExistingUrl_${index}`];
+        }
+      } else {
+        linkImageUrl = '';
+      }
+
+      processedLinks.push({
+        title: link.title,
+        url: link.url,
+        type: link.title,
+        icon: link.icon,
+        linkImage: linkImageUrl,
+      });
     }
 
     const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app';
     const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username}`;
 
-    // Check if username already exists (disallow updates)
     const linkPageRef = db.collection('linkPages').doc(username);
     const linkPageSnap = await linkPageRef.get();
 
-    if (linkPageSnap.exists) {
-      return res.status(403).json({ success: false, message: 'Username already exists. Cannot overwrite existing Zap link.' });
+    if (linkPageSnap.exists && linkPageSnap.data().uid !== uid) {
+      return res.status(403).json({ success: false, message: 'Username already taken by another user.' });
     }
 
-    // Format links
-    const formattedLinks = links.map(link => ({
-      title: link.title,
-      url: link.url,
-      type: link.title,
-      icon: link.icon,
-    }));
-
-    // Save new link page
     await linkPageRef.set({
       uid,
       username,
-      bio,
-      profilePic,
-      links: formattedLinks,
-      pageClicks: 0,
-      createdAt: new Date(),
+      bio: bio || '',
+      profilePicUrl: profilePicUrl,
+      links: processedLinks,
+      pageClicks: linkPageSnap.exists ? linkPageSnap.data().pageClicks : 0,
+      createdAt: linkPageSnap.exists ? linkPageSnap.data().createdAt : new Date(),
       updatedAt: new Date(),
       linkPageUrl,
       template
-    });
+    }, { merge: true });
 
-    res.status(201).json({ success: true, message: 'Zap link created successfully.', linkPageUrl });
+    res.status(200).json({ success: true, message: 'Zap link saved successfully.', linkPageUrl });
   } catch (error) {
     console.error('Error in createZapLink:', error);
     res.status(500).json({ success: false, error: error.message });

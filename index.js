@@ -13,7 +13,6 @@ import BioGramRoutes from "./routes/BioGram.js"
 import { getPortfolio } from "./controller/skillVaultController.js"
 import aiRoutes from "./routes/AIRoutes.js"
 import fileUpload from 'express-fileupload';
-
 import cookieParser from "cookie-parser"
 dotenv.config();
 
