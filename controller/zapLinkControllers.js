@@ -17,6 +17,7 @@ export const createZapLink = async (req, res) => {
     }
 
     let profilePicUrl = req.body.profilePicUrl || '';
+    let profilePicPublicId = req.body.profilePicPublicId || '';
     const profilePicFile = req.files && req.files.profilePic;
 
     if (profilePicFile) {
@@ -40,6 +41,7 @@ export const createZapLink = async (req, res) => {
         });
 
         profilePicUrl = result.secure_url;
+        profilePicPublicId = result.public_id;
       } catch (uploadError) {
         console.error('Cloudinary profile picture upload error:', uploadError);
         return res.status(500).json({ success: false, message: 'Failed to upload profile picture.' });
@@ -93,6 +95,7 @@ export const createZapLink = async (req, res) => {
       }
 
       let linkImageUrl = '';
+      let linkImagePublicId = '';
       const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
 
       if (link.platform === 'Custom') {
@@ -115,12 +118,14 @@ export const createZapLink = async (req, res) => {
               resource_type: 'auto',
             });
             linkImageUrl = result.secure_url;
+            linkImagePublicId = result.public_id;
           } catch (uploadError) {
             console.error(`Cloudinary custom link image upload error for link ${index + 1}:`, uploadError);
             return res.status(500).json({ success: false, message: `Failed to upload image for link ${index + 1}.` });
           }
         } else if (req.body[`linkImageExistingUrl_${index}`]) {
           linkImageUrl = req.body[`linkImageExistingUrl_${index}`];
+          linkImagePublicId = req.body[`linkImageExistingPublicId_${index}`] || '';
         }
       }
 
@@ -130,6 +135,7 @@ export const createZapLink = async (req, res) => {
         type: link.platform || link.title,
         icon: link.icon,
         linkImage: linkImageUrl,
+        linkImagePublicId: linkImagePublicId
       });
     }
 
@@ -139,8 +145,8 @@ export const createZapLink = async (req, res) => {
     const linkPageRef = db.collection('linkPages').doc(username);
     const linkPageSnap = await linkPageRef.get();
 
-    if (linkPageSnap.exists && linkPageSnap.data().uid !== uid) {
-      return res.status(403).json({ success: false, message: 'Username already taken by another user.' });
+    if (linkPageSnap.exists) {
+      return res.status(409).json({ success: false, message: 'Username already taken. Please choose a different one.' });
     }
 
     await linkPageRef.set({
@@ -148,15 +154,16 @@ export const createZapLink = async (req, res) => {
       username,
       bio: bio || '',
       profilePicUrl: profilePicUrl,
+      profilePicPublicId: profilePicPublicId,
       links: processedLinks,
-      pageClicks: linkPageSnap.exists ? linkPageSnap.data().pageClicks : 0,
-      createdAt: linkPageSnap.exists ? linkPageSnap.data().createdAt : new Date(),
+      pageClicks: 0,
+      createdAt: new Date(),
       updatedAt: new Date(),
       linkPageUrl,
       template
-    }, { merge: true });
+    });
 
-    res.status(200).json({ success: true, message: 'Zap link saved successfully.', linkPageUrl });
+    res.status(200).json({ success: true, message: 'Zap link created successfully.', linkPageUrl });
   } catch (error) {
     console.error('Error in createZapLink:', error);
     res.status(500).json({ success: false, error: error.message });
