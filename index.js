@@ -23,8 +23,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT'],
   credentials: true
 }));
-app.use(express.json());
 app.use(fileUpload({ useTempFiles: true, tempFileDir: "/tmp/" }));
+app.use(express.json());
+
 app.use(cookieParser());
 const PORT = process.env.PORT || 3000;
 app.get("/", authenticateToken, (req, res) => {
