@@ -23,7 +23,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT'],
   credentials: true
 }));
-app.use(fileUpload({ useTempFiles: true, tempFileDir: "/tmp/" }));
+app.use(fileUpload());
 app.use(express.json());
 
 app.use(cookieParser());
