@@ -217,6 +217,39 @@ export const createZapLink = async (req, res) => {
   }
 };
 
+export const getUserZaplinks = async (req, res) => {
+  try {
+    const uid = req.user.uid
+
+    if (!uid) {
+      return res.status(400).json({ success: false, message: "User ID is required." });
+    }
+    if (!db) {
+      return res.status(500).json({ success: false, message: "Database instance is not provided." });
+    }
+
+    const linkPagesRef = collection(db, "linkPages");
+    const q = query(linkPagesRef, where("uid", "==", uid));
+    const querySnapshot = await getDocs(q);
+
+    const userZaplinks = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt:
+        doc.data().createdAt?.toDate().toISOString() || new Date().toISOString(),
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: userZaplinks,
+      message: "User zaplinks fetched successfully.",
+    });
+  } catch (error) {
+    console.error('Error in getUserZaplinksCombinedController:', error);
+    res.status(500).json({ success: false, error: error.message || "Internal server error." });
+  }
+};
+
 export const getLinkPageByUsername = async (req, res) => {
   try {
     const { username } = req.params;
