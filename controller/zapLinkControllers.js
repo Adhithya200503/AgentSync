@@ -1,5 +1,6 @@
 import admin, { db } from "../utils/firebase.js";
 import cloudinary from "../utils/cloudinary.js";
+import { query } from "express";
 
 // Ensure you have initialized and configured Cloudinary (e.g., const cloudinary = require('cloudinary').v2;)
 // Ensure you have initialized your Firestore DB (e.g., const db = admin.firestore();)
@@ -217,26 +218,22 @@ export const createZapLink = async (req, res) => {
   }
 };
 
-export const getUserZaplinks = async (req, res) => {
+export const getUserZaplinks = async (req, res, db) => {
   try {
-    const uid = req.user.uid
+    const uid = req.user.uid;
 
     if (!uid) {
       return res.status(400).json({ success: false, message: "User ID is required." });
     }
-    if (!db) {
-      return res.status(500).json({ success: false, message: "Database instance is not provided." });
-    }
 
-    const linkPagesRef = collection(db, "linkPages");
-    const q = query(linkPagesRef, where("uid", "==", uid));
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await db.collection("linkPages")
+      .where("uid", "==", uid)
+      .get();
 
     const userZaplinks = querySnapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
-      createdAt:
-        doc.data().createdAt?.toDate().toISOString() || new Date().toISOString(),
+      createdAt: doc.data().createdAt?.toDate().toISOString() || new Date().toISOString(),
     }));
 
     res.status(200).json({
@@ -245,7 +242,7 @@ export const getUserZaplinks = async (req, res) => {
       message: "User zaplinks fetched successfully.",
     });
   } catch (error) {
-    console.error('Error in getUserZaplinksCombinedController:', error);
+    console.error('Error in getUserZaplinks:', error);
     res.status(500).json({ success: false, error: error.message || "Internal server error." });
   }
 };
