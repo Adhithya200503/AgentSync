@@ -1,9 +1,8 @@
 import admin, { db } from "../utils/firebase.js";
 import cloudinary from "../utils/cloudinary.js";
-import { query } from "express";
 
-// Ensure you have initialized and configured Cloudinary (e.g., const cloudinary = require('cloudinary').v2;)
-// Ensure you have initialized your Firestore DB (e.g., const db = admin.firestore();)
+
+ 
 
 export const createZapLink = async (req, res) => {
   try {
