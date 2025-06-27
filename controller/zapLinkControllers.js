@@ -1,327 +1,745 @@
 import admin, { db } from "../utils/firebase.js";
 import cloudinary from "../utils/cloudinary.js";
+import { Buffer } from 'buffer';
+import { v4 as uuidv4 } from 'uuid'; // <-- ADD THIS LINE to import uuid
 
+const PLATFORMS = [
+    { name: "Website", icon: "website", prefix: "https://" },
+    { name: "Instagram", icon: "instagram", prefix: "https://instagram.com/" },
+    { name: "Facebook", icon: "facebook-f", prefix: "https://facebook.com/" },
+    { name: "LinkedIn", icon: "linkedin-in", prefix: "https://linkedin.com/in/" },
+    { name: "Twitter", icon: "twitter", prefix: "https://twitter.com/" },
+    { name: "YouTube", icon: "youtube", prefix: "https://www.youtube.com/channel/" },
+    { name: "Twitch", icon: "twitch", prefix: "https://twitch.tv/" },
+    { name: "GitHub", icon: "github", prefix: "https://github.com/" },
+    { name: "Discord", icon: "discord", prefix: "https://discord.gg/" },
+    { name: "Gmail", icon: "envelope", prefix: "mailto:" },
+    { name: "Custom", icon: "link", prefix: "" },
+];
+
+const deleteCloudinaryImage = async (publicId) => {
+    if (publicId) {
+        try {
+            await cloudinary.uploader.destroy(publicId);
+            console.log('Successfully deleted Cloudinary image:', publicId);
+        } catch (error) {
+            console.error('Error deleting Cloudinary image:', publicId, error);
+        }
+    }
+};
 
 export const createZapLink = async (req, res) => {
-  try {
-   
+    try {
+        const uid = req.user.uid;
+        const { username, bio, template } = req.body;
 
-    const uid = req.user.uid;
-    const { username, bio, template } = req.body;
-
-    let links = [];
-    if (req.body.links) {
-      try {
-        links = JSON.parse(req.body.links);
-      } catch (parseError) {
-        console.error('Error parsing links JSON:', parseError);
-        return res.status(400).json({ success: false, message: 'Invalid links data format.' });
-      }
-    }
-
-    let profilePicUrl = ''; 
-    let profilePicPublicId = ''; 
-    const profilePicFile = req.files && req.files.profilePic;
-
-    if (profilePicFile) {
-      try {
-        
-        if (
-          !profilePicFile.data ||
-          !Buffer.isBuffer(profilePicFile.data) ||
-          !profilePicFile.mimetype ||
-          profilePicFile.data.length === 0
-        ) {
-          console.error('Validation failed for profile picture file.');
-          return res.status(400).json({ success: false, message: 'Invalid or empty profile picture file.' });
+        let links = [];
+        if (req.body.links) {
+            try {
+                links = JSON.parse(req.body.links);
+            } catch (parseError) {
+                console.error('Error parsing links JSON:', parseError);
+                return res.status(400).json({ success: false, message: 'Invalid links data format.' });
+            }
         }
 
-        
-        const base64Data = profilePicFile.data.toString('base64');
-        const base64ProfilePic = `data:${profilePicFile.mimetype};base64,${base64Data}`;
+        let profilePicUrl = '';
+        let profilePicPublicId = '';
+        const profilePicFile = req.files && req.files.profilePic;
 
-      
-        const result = await cloudinary.uploader.upload(base64ProfilePic, {
-          folder: 'zaplink/profile_pictures',
-          resource_type: 'auto', 
+        if (profilePicFile) {
+            try {
+                if (
+                    !profilePicFile.data ||
+                    !Buffer.isBuffer(profilePicFile.data) ||
+                    !profilePicFile.mimetype ||
+                    profilePicFile.data.length === 0
+                ) {
+                    console.error('Validation failed for profile picture file.');
+                    return res.status(400).json({ success: false, message: 'Invalid or empty profile picture file.' });
+                }
+
+                const base64Data = profilePicFile.data.toString('base64');
+                const base64ProfilePic = `data:${profilePicFile.mimetype};base64,${base64Data}`;
+
+                const result = await cloudinary.uploader.upload(base64ProfilePic, {
+                    folder: 'zaplink/profile_pictures',
+                    resource_type: 'auto',
+                });
+
+                profilePicUrl = result.secure_url;
+                profilePicPublicId = result.public_id;
+                console.log('Profile picture uploaded:', profilePicUrl, profilePicPublicId);
+            } catch (uploadError) {
+                console.error('Cloudinary profile picture upload error:', uploadError);
+                return res.status(500).json({ success: false, message: 'Failed to upload profile picture.' });
+            }
+        }
+
+        if (!username || typeof username !== 'string' || username.trim() === '') {
+            return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
+        }
+        if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+            return res.status(400).json({ success: false, message: 'Username can only contain alphanumeric characters, underscores, hyphens, and periods.' });
+        }
+        if (username.length < 3 || username.length > 30) {
+            return res.status(400).json({ success: false, message: 'Username must be between 3 and 30 characters long.' });
+        }
+
+        if (typeof bio !== 'string') {
+            return res.status(400).json({ success: false, message: 'Bio must be a string.' });
+        }
+        if (bio.length > 250) {
+            return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
+        }
+
+        const processedLinks = [];
+        const urlRegex = /^(https?|mailto|tel|sms|whatsapp):\/\/[^\s$.?#].[^\s]*$/i;
+
+        if (Array.isArray(links)) {
+            for (const [index, link] of links.entries()) {
+                const linkPlatform = (typeof link.platform === 'string' && link.platform.trim() !== '')
+                    ? link.platform.trim()
+                    : PLATFORMS[0].name;
+
+                const linkTitle = (typeof link.title === 'string' && link.title.trim() !== '')
+                    ? link.title.trim()
+                    : PLATFORMS.find(p => p.name === linkPlatform)?.name || 'Link';
+
+                const linkUrl = (typeof link.url === 'string' && link.url.trim() !== '')
+                    ? link.url.trim()
+                    : '';
+
+                const linkIcon = (typeof link.icon === 'string' && link.icon.trim() !== '')
+                    ? link.icon.trim()
+                    : linkPlatform.toLowerCase();
+
+                // Add validation for link properties (url, title, icon)
+                if (!linkUrl) {
+                    return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
+                }
+                if (!urlRegex.test(linkUrl) &&
+                    !linkUrl.startsWith('mailto:') &&
+                    !linkUrl.startsWith('tel:') &&
+                    !linkUrl.startsWith('sms:') &&
+                    !linkUrl.startsWith('whatsapp:')) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Link ${index + 1}: Invalid URL format. Must be a valid web URL, mailto:, tel:, sms:, or whatsapp:.`
+                    });
+                }
+                if (!linkTitle) {
+                    return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
+                }
+                if (!linkIcon) {
+                    return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
+                }
+
+                let linkImageUrl = '';
+                let linkImagePublicId = '';
+                const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
+
+                if (customLinkImageFile) {
+                    try {
+                        if (
+                            !customLinkImageFile.data ||
+                            !Buffer.isBuffer(customLinkImageFile.data) ||
+                            !customLinkImageFile.mimetype ||
+                            customLinkImageFile.data.length === 0
+                        ) {
+                            console.error(`Validation failed for link image file at index ${index}.`);
+                            return res.status(400).json({ success: false, message: `Invalid or empty image for link ${index + 1}.` });
+                        }
+
+                        const base64Image = customLinkImageFile.data.toString('base64');
+                        const base64CustomLinkImage = `data:${customLinkImageFile.mimetype};base64,${base64Image}`;
+
+                        const result = await cloudinary.uploader.upload(base64CustomLinkImage, {
+                            folder: 'zaplink/link_images',
+                            resource_type: 'auto',
+                        });
+                        linkImageUrl = result.secure_url;
+                        linkImagePublicId = result.public_id;
+                    } catch (uploadError) {
+                        console.error(`Cloudinary link image upload error for link ${index + 1}:`, uploadError);
+                    }
+                }
+
+                processedLinks.push({
+                    id: link.id || uuidv4(), // <-- FIX: Ensure ID is always defined
+                    title: linkTitle,
+                    url: linkUrl,
+                    type: linkPlatform,
+                    icon: linkIcon,
+                    linkImage: linkImageUrl,
+                    linkImagePublicId: linkImagePublicId
+                });
+            }
+        } else {
+            return res.status(400).json({ success: false, message: 'At least one link is required.' });
+        }
+
+        const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app';
+        const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username}`;
+
+        const linkPageRef = db.collection('linkPages').doc(username);
+        const linkPageSnap = await linkPageRef.get();
+
+        if (linkPageSnap.exists) {
+            return res.status(409).json({ success: false, message: 'Username already taken. Please choose a different one.' });
+        }
+
+        await linkPageRef.set({
+            uid,
+            username: username.trim(),
+            bio: bio ? bio.trim() : '',
+            profilePicUrl,
+            profilePicPublicId,
+            links: processedLinks,
+            pageClicks: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            linkPageUrl,
+            template: template || 'default'
         });
 
-        profilePicUrl = result.secure_url; 
-        profilePicPublicId = result.public_id; 
-        console.log('Profile picture uploaded:', profilePicUrl, profilePicPublicId); 
-      } catch (uploadError) {
-        console.error('Cloudinary profile picture upload error:', uploadError);
-        return res.status(500).json({ success: false, message: 'Failed to upload profile picture.' });
-      }
+        res.status(200).json({ success: true, message: 'Zap link created successfully.', linkPageUrl });
+    } catch (error) {
+        console.error('Error in createZapLink (general catch):', error);
+        res.status(500).json({ success: false, error: error.message || 'An unexpected error occurred.' });
     }
+};
 
-    
-    if (!username || typeof username !== 'string' || username.trim() === '') {
-      return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
-    }
-    if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
-      return res.status(400).json({ success: false, message: 'Username can only contain alphanumeric characters, underscores, hyphens, and periods.' });
-    }
-    if (username.length < 3 || username.length > 30) {
-      return res.status(400).json({ success: false, message: 'Username must be between 3 and 30 characters long.' });
-    }
 
-   
-    if (typeof bio !== 'string') {
-      return res.status(400).json({ success: false, message: 'Bio must be a string.' });
-    }
-    if (bio.length > 250) {
-      return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
-    }
+export const editZapLink = async (req, res) => {
+    const deleteCloudinaryImage = async (publicId) => {
+        if (publicId) {
+            try {
+                await cloudinary.uploader.destroy(publicId);
+                console.log('Successfully deleted Cloudinary image:', publicId);
+            } catch (error) {
+                console.error('Error deleting Cloudinary image:', publicId, error);
+            }
+        }
+    };
 
-    if (!Array.isArray(links) || links.length === 0) {
-      return res.status(400).json({ success: false, message: 'At least one link is required.' });
-    }
+    try {
+        const uid = req.user.uid;
+        const { username } = req.params;
 
-    const processedLinks = [];
-    for (const [index, link] of links.entries()) {
-     
-      console.log(`Backend: link.platform for link at index ${index}:`, link.platform);
+        if (!username || typeof username !== 'string' || username.trim() === '') {
+            return res.status(400).json({ success: false, message: 'Username is required in the URL path.' });
+        }
 
-      if (!link.title || typeof link.title !== 'string' || link.title.trim() === '') {
-        return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
-      }
-      if (!link.url || typeof link.url !== 'string' || link.url.trim() === '') {
-        return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
-      }
+        const linkPageRef = db.collection('linkPages').doc(username);
+        const linkPageSnap = await linkPageRef.get();
 
-    
-      const urlRegex = /^(https?|mailto|tel|sms|whatsapp):\/\/[^\s$.?#].[^\s]*$/i;
-      if (!urlRegex.test(link.url) &&
-        !link.url.startsWith('mailto:') &&
-        !link.url.startsWith('tel:') &&
-        !link.url.startsWith('sms:') &&
-        !link.url.startsWith('whatsapp:')) {
-        return res.status(400).json({
-          success: false,
-          message: `Link ${index + 1}: Invalid URL format. Must be a valid web URL, mailto:, tel:, sms:, or whatsapp:.`
-        });
-      }
+        if (!linkPageSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Zap link page not found.' });
+        }
 
-      if (!link.icon || typeof link.icon !== 'string' || link.icon.trim() === '') {
-        return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
-      }
+        const existingPageData = linkPageSnap.data();
 
-      let linkImageUrl = '';
-      let linkImagePublicId = '';
-    
-      const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
+        if (existingPageData.uid !== uid) {
+            return res.status(403).json({ success: false, message: 'Forbidden: You do not have permission to edit this page.' });
+        }
 
-     
-      if (link.platform === 'Custom') {
-        if (customLinkImageFile) {
-          console.log(`Processing custom link image for index ${index}:`, customLinkImageFile.name);
-          try {
-         
+        const updateData = {
+            updatedAt: new Date(),
+        };
+
+        const { bio, template } = req.body;
+        let links = [];
+
+        if (bio !== undefined) {
+            if (typeof bio !== 'string') {
+                return res.status(400).json({ success: false, message: 'Bio must be a string.' });
+            }
+            if (bio.length > 250) {
+                return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
+            }
+            updateData.bio = bio.trim();
+        }
+
+        if (template !== undefined) {
+            updateData.template = template;
+        }
+
+        const profilePicFile = req.files && req.files.profilePic;
+        const removeProfilePicFlag = req.body.removeProfilePic === 'true';
+
+        if (profilePicFile) {
             if (
-              !customLinkImageFile.data ||
-              !Buffer.isBuffer(customLinkImageFile.data) ||
-              !customLinkImageFile.mimetype ||
-              customLinkImageFile.data.length === 0
+                !profilePicFile.data ||
+                !Buffer.isBuffer(profilePicFile.data) ||
+                !profilePicFile.mimetype ||
+                profilePicFile.data.length === 0
             ) {
-              console.error(`Validation failed for custom link image file at index ${index}.`);
-              return res.status(400).json({ success: false, message: `Invalid or empty image for link ${index + 1}.` });
+                console.error('Validation failed for new profile picture file.');
+                return res.status(400).json({ success: false, message: 'Invalid or empty new profile picture file.' });
             }
 
-            const base64Image = customLinkImageFile.data.toString('base64');
-            const base64CustomLinkImage = `data:${customLinkImageFile.mimetype};base64,${base64Image}`;
+            if (existingPageData.profilePicPublicId) {
+                await deleteCloudinaryImage(existingPageData.profilePicPublicId);
+            }
 
-           
-            const result = await cloudinary.uploader.upload(base64CustomLinkImage, {
-              folder: 'zaplink/custom_link_images', 
-              resource_type: 'auto',
+            const base64Data = profilePicFile.data.toString('base64');
+            const base64ProfilePic = `data:${profilePicFile.mimetype};base64,${base64Data}`;
+
+            const result = await cloudinary.uploader.upload(base64ProfilePic, {
+                folder: 'zaplink/profile_pictures',
+                resource_type: 'auto',
             });
-            linkImageUrl = result.secure_url;
-            linkImagePublicId = result.public_id;
-            console.log(`Custom link image uploaded for index ${index}:`, linkImageUrl, linkImagePublicId);
-          } catch (uploadError) {
-            console.error(`Cloudinary custom link image upload error for link ${index + 1}:`, uploadError);
-          }
+            updateData.profilePicUrl = result.secure_url;
+            updateData.profilePicPublicId = result.public_id;
+        } else if (removeProfilePicFlag) {
+            if (existingPageData.profilePicPublicId) {
+                await deleteCloudinaryImage(existingPageData.profilePicPublicId);
+            }
+            updateData.profilePicUrl = '';
+            updateData.profilePicPublicId = '';
         } else {
-          console.log(`No custom link image file provided for link at index ${index} (optional for 'Custom' links if no new image selected).`);
+            updateData.profilePicUrl = existingPageData.profilePicUrl || '';
+            updateData.profilePicPublicId = existingPageData.profilePicPublicId || '';
         }
-      } else {
-        console.log(`Link platform is not 'Custom' for index ${index}. Image upload logic for this link skipped.`);
-      }
 
-       
-      processedLinks.push({
-        title: link.title,
-        url: link.url,
-        type: link.platform,  
-        icon: link.icon,
-        linkImage: linkImageUrl,  
-        linkImagePublicId: linkImagePublicId  
-      });
+        if (req.body.links) {
+            try {
+                links = JSON.parse(req.body.links);
+            } catch (parseError) {
+                console.error('Error parsing links JSON for update:', parseError);
+                return res.status(400).json({ success: false, message: 'Invalid links data format for update.' });
+            }
+
+            const existingLinkMap = new Map();
+            if (Array.isArray(existingPageData.links)) {
+                existingPageData.links.forEach(link => {
+                    if (link.id) existingLinkMap.set(link.id, link);
+                });
+            }
+
+            const processedLinks = [];
+            const urlRegex = /^(https?:\/\/[^\s]+|mailto:[^\s]+|tel:[^\s]+|sms:[^\s]+|whatsapp:[^\s]+)$/i;
+
+            for (const [index, link] of links.entries()) {
+                const existingLinkData = link.id ? existingLinkMap.get(link.id) : null;
+
+                const linkType = (typeof link.type === 'string' && link.type.trim() !== '')
+                    ? link.type.trim()
+                    : 'Website';
+
+                const linkTitle = (typeof link.title === 'string' && link.title.trim() !== '')
+                    ? link.title.trim()
+                    : 'Link';
+
+                const linkIcon = (typeof link.icon === 'string' && link.icon.trim() !== '')
+                    ? link.icon.trim()
+                    : linkType.toLowerCase();
+
+                const linkUrl = (typeof link.url === 'string' && link.url.trim() !== '')
+                    ? link.url.trim()
+                    : '';
+
+                if (!linkUrl) {
+                    return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
+                }
+
+                let isUrlValid = urlRegex.test(linkUrl);
+
+                if (linkType === 'Website' || linkType === 'Custom') {
+                    isUrlValid = urlRegex.test(linkUrl);
+                } else if (linkType === 'Gmail') {
+                    isUrlValid = linkUrl.startsWith('mailto:') && /^mailto:[^@]+@[^.]+\.[^\s]+$/.test(linkUrl);
+                } else {
+                    isUrlValid = urlRegex.test(linkUrl);
+                }
+
+                if (!isUrlValid) {
+                    console.log(`Validation failed for URL: ${linkUrl} (type: ${linkType})`);
+                    return res.status(400).json({
+                        success: false,
+                        message: `Link ${index + 1}: Invalid URL format for ${linkType}.`
+                    });
+                }
+                if (!linkTitle) {
+                    return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
+                }
+
+                let currentLinkImageUrl = existingLinkData?.linkImage || '';
+                let currentLinkImagePublicId = existingLinkData?.linkImagePublicId || '';
+
+                const newLinkImageFile = req.files && req.files[`linkImage_${index}`];
+
+                if (newLinkImageFile) {
+                    if (currentLinkImagePublicId) {
+                        await deleteCloudinaryImage(currentLinkImagePublicId);
+                    }
+                    const base64Data = newLinkImageFile.data.toString('base64');
+                    const base64LinkImage = `data:${newLinkImageFile.mimetype};base64,${base64Data}`;
+                    const result = await cloudinary.uploader.upload(base64LinkImage, {
+                        folder: 'zaplink/link_images',
+                        resource_type: 'auto',
+                    });
+                    currentLinkImageUrl = result.secure_url;
+                    currentLinkImagePublicId = result.public_id;
+                } else if (link.linkImagePublicId === "REMOVE") {
+                    if (existingLinkData?.linkImagePublicId) {
+                        await deleteCloudinaryImage(existingLinkData.linkImagePublicId);
+                    }
+                    currentLinkImageUrl = '';
+                    currentLinkImagePublicId = '';
+                } else {
+                    currentLinkImageUrl = existingLinkData?.linkImage || '';
+                    currentLinkImagePublicId = existingLinkData?.linkImagePublicId || '';
+                }
+
+                processedLinks.push({
+                    id: link.id || uuidv4(),
+                    title: linkTitle,
+                    url: linkUrl,
+                    type: linkType,
+                    icon: linkIcon,
+                    linkImage: currentLinkImageUrl,
+                    linkImagePublicId: currentLinkImagePublicId
+                });
+            }
+            updateData.links = processedLinks;
+
+            const removedLinkIds = Array.from(existingLinkMap.keys()).filter(id => !links.some(l => l.id === id));
+            for (const removedId of removedLinkIds) {
+                const removedLink = existingLinkMap.get(removedId);
+                if (removedLink?.linkImagePublicId) {
+                    await deleteCloudinaryImage(removedLink.linkImagePublicId);
+                }
+            }
+
+        } else {
+            if (Array.isArray(existingPageData.links)) {
+                for (const existingLink of existingPageData.links) {
+                    if (existingLink.linkImagePublicId) {
+                        await deleteCloudinaryImage(existingLink.linkImagePublicId);
+                    }
+                }
+            }
+            updateData.links = [];
+        }
+
+        await linkPageRef.update(updateData);
+
+        const linkPageUrl = `${process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app'}/zaplink/${username}`;
+
+        res.status(200).json({ success: true, message: 'Zap link page updated successfully.', linkPageUrl: linkPageUrl });
+
+    } catch (error) {
+        console.error('Error in editZapLink (general catch):', error);
+        res.status(500).json({ success: false, error: error.message || 'An unexpected error occurred.' });
     }
-
- 
-    const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app';
-    const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username}`;
-
-    
-    const linkPageRef = db.collection('linkPages').doc(username);
-    const linkPageSnap = await linkPageRef.get();
-
-    if (linkPageSnap.exists) {
-      return res.status(409).json({ success: false, message: 'Username already taken. Please choose a different one.' });
-    }
-
-   
-    await linkPageRef.set({
-      uid, 
-      username,
-      bio: bio || '',  
-      profilePicUrl: profilePicUrl,
-      profilePicPublicId: profilePicPublicId,
-      links: processedLinks, 
-      pageClicks: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      linkPageUrl,
-      template 
-    });
-
-    res.status(200).json({ success: true, message: 'Zap link created successfully.', linkPageUrl });
-  } catch (error) {
-    
-    console.error('Error in createZapLink (general catch):', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
 };
 
 export const getLinkPageByUsername = async (req, res) => {
-  try {
-    const { username } = req.params;
-    console.log("triggered");
-    const docRef = db.collection('linkPages').doc(username);
+    try {
+        const { username } = req.params;
+        const docRef = db.collection('linkPages').doc(username);
 
-    const result = await db.runTransaction(async (transaction) => {
-      const docSnap = await transaction.get(docRef);
+        const result = await db.runTransaction(async (transaction) => {
+            const docSnap = await transaction.get(docRef);
 
-      if (!docSnap.exists) {
-        return {
-          status: 404,
-          data: { success: false, message: 'Link page not found.' },
-        };
-      }
+            if (!docSnap.exists) {
+                return {
+                    status: 404,
+                    data: { success: false, message: 'Link page not found.' },
+                };
+            }
 
-      const currentData = docSnap.data();
-      const newPageClicks = (currentData.pageClicks || 0) + 1;
+            const currentData = docSnap.data();
+            const newPageClicks = (currentData.pageClicks || 0) + 1;
 
-      const stats = currentData.stats || [];
-      const overallCount = (currentData.count || 0) + 1;
+            const stats = currentData.stats || [];
+            const overallCount = (currentData.count || 0) + 1;
 
-      let ip =
-        req.headers["x-forwarded-for"]?.split(",")[0] ||
-        req.socket.remoteAddress ||
-        "";
+            let ip =
+                req.headers["x-forwarded-for"]?.split(",")[0] ||
+                req.socket.remoteAddress ||
+                "";
 
-      if (ip === '::1' || ip === '127.0.0.1') {
-        ip = '8.8.8.8';
-      }
+            if (ip === '::1' || ip === '127.0.0.1') {
+                ip = '8.8.8.8';
+            }
 
-      const geoRes = await fetch(`https://ipwho.is/${ip}`);
-      const geoData = await geoRes.json();
+            const geoRes = await fetch(`https://ipwho.is/${ip}`);
+            const geoData = await geoRes.json();
 
-      let country = "Unknown";
-      let city = "Unknown";
+            let country = "Unknown";
+            let city = "Unknown";
 
-      if (!geoData.success) {
-        console.log("Geo lookup failed", geoData.message);
-      } else {
-        country = geoData.country || "Unknown";
-        city = geoData.city || "Unknown";
-      }
+            if (!geoData.success) {
+                console.log("Geo lookup failed", geoData.message);
+            } else {
+                country = geoData.country || "Unknown";
+                city = geoData.city || "Unknown";
+            }
 
-      const countryIndex = stats.findIndex(
-        (c) => c.country.toLowerCase() === country.toLowerCase()
-      );
+            const countryIndex = stats.findIndex(
+                (c) => c.country.toLowerCase() === country.toLowerCase()
+            );
 
-      if (countryIndex > -1) {
-        stats[countryIndex].count += 1;
+            if (countryIndex > -1) {
+                stats[countryIndex].count += 1;
 
-        const cityIndex = stats[countryIndex].topCities.findIndex(
-          (c) => c.city.toLowerCase() === city.toLowerCase()
-        );
+                const cityIndex = stats[countryIndex].topCities.findIndex(
+                    (c) => c.city.toLowerCase() === city.toLowerCase()
+                );
 
-        if (cityIndex > -1) {
-          stats[countryIndex].topCities[cityIndex].count += 1;
-        } else {
-          stats[countryIndex].topCities.push({ city, count: 1 });
+                if (cityIndex > -1) {
+                    stats[countryIndex].topCities[cityIndex].count += 1;
+                } else {
+                    stats[countryIndex].topCities.push({ city, count: 1 });
+                }
+
+                stats[countryIndex].topCities.sort((a, b) => b.count - a.count);
+                stats[countryIndex].topCities = stats[countryIndex].topCities.slice(0, 3);
+            } else {
+                stats.push({
+                    country,
+                    count: 1,
+                    topCities: [{ city, count: 1 }],
+                });
+            }
+
+            transaction.update(docRef, {
+                pageClicks: newPageClicks,
+                stats: stats,
+                count: overallCount,
+            });
+
+            return {
+                status: 200,
+                data: {
+                    success: true,
+                    data: { ...currentData, pageClicks: newPageClicks, stats: stats, count: overallCount },
+                },
+            };
+        });
+
+        res.status(result.status).json(result.data);
+    } catch (error) {
+        console.error('Error in getLinkPageByUsername:', error);
+        res.status(500).json({ success: false, error: error.message || 'An unexpected error occurred.' });
+    }
+};
+
+export const getLinkPageByUsernameWithoutStats = async (req, res) => {
+    try {
+        const { username } = req.params;
+
+        const docRef = db.collection("linkPages").doc(username);
+        const docSnap = await docRef.get();
+
+        if (!docSnap.exists) {
+            return res.status(404).json({
+                success: false,
+                message: "Link page not found.",
+            });
         }
 
-        stats[countryIndex].topCities.sort((a, b) => b.count - a.count);
-        stats[countryIndex].topCities = stats[countryIndex].topCities.slice(0, 3);
-      } else {
-        stats.push({
-          country,
-          count: 1,
-          topCities: [{ city, count: 1 }],
+        const data = docSnap.data();
+
+        return res.status(200).json({
+            success: true,
+            data,
         });
-      }
+    } catch (error) {
+        console.error("Error in getLinkPageByUsernameWithoutStats:", error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || 'An unexpected error occurred.',
+        });
+    }
+};
 
-      transaction.update(docRef, {
-        pageClicks: newPageClicks,
-        stats: stats,
-        count: overallCount,
-      });
+export const getAllUserZapLinks = async (req, res) => {
+    try {
+        const uid = req.user.uid;
 
-      return {
-        status: 200,
-        data: {
-          success: true,
-          data: { ...currentData, pageClicks: newPageClicks, stats: stats, count: overallCount },
-        },
-      };
-    });
+        if (!uid) {
+            return res.status(401).json({ success: false, message: 'User not authenticated.' });
+        }
 
-    res.status(result.status).json(result.data);
-  } catch (error) {
-    console.error('Error in getLinkPageByUsername:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+        const zaplinksRef = db.collection('linkPages');
+        const q = zaplinksRef.where('uid', '==', uid);
+        const snapshot = await q.get();
+
+        const zaplinks = [];
+
+        if (snapshot.empty) {
+            return res.status(200).json({ success: true, message: 'No zaplinks found for this user.', data: [] });
+        }
+
+        snapshot.forEach(doc => {
+            zaplinks.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+
+        res.status(200).json({ success: true, message: 'Successfully retrieved user zaplinks.', data: zaplinks });
+
+    } catch (error) {
+        console.error('Error fetching user zaplinks:', error);
+        res.status(500).json({ success: false, message: 'Failed to retrieve user zaplinks.', error: error.message || 'An unexpected error occurred.' });
+    }
 };
 
 
-export const getAllUserZapLinks = async (req, res) => {
-  try {
- 
-    const uid = req.user.uid;
+export const deleteZapLink = async (req, res) => {
+    try {
+        const uid = req.user.uid;
+        const { username } = req.params;
 
-    if (!uid) {
-      return res.status(401).json({ success: false, message: 'User not authenticated.' });
+        if (!username || typeof username !== 'string' || username.trim() === '') {
+            return res.status(400).json({ success: false, message: 'Username is required in the URL path.' });
+        }
+
+        const linkPageRef = db.collection('linkPages').doc(username);
+        const linkPageSnap = await linkPageRef.get();
+
+        if (!linkPageSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Zap link page not found.' });
+        }
+
+        const existingPageData = linkPageSnap.data();
+
+
+        if (existingPageData.uid !== uid) {
+            return res.status(403).json({ success: false, message: 'Forbidden: You do not have permission to delete this page.' });
+        }
+
+
+        if (existingPageData.profilePicPublicId) {
+            await deleteCloudinaryImage(existingPageData.profilePicPublicId);
+        }
+
+
+        if (Array.isArray(existingPageData.links)) {
+            for (const link of existingPageData.links) {
+                if (link.linkImagePublicId) {
+                    await deleteCloudinaryImage(link.linkImagePublicId);
+                }
+            }
+        }
+
+
+        await linkPageRef.delete();
+
+        res.status(200).json({ success: true, message: 'Zap link page deleted successfully.' });
+
+    } catch (error) {
+        console.error('Error in deleteZapLink:', error);
+        res.status(500).json({ success: false, error: error.message || 'An unexpected error occurred.' });
+    }
+};
+
+
+export const createOrUpdateTemplate = async (req, res) => {
+    const userId = req.user?.uid;
+    const {
+        templateId = null,
+        customizer,
+        isPublic = false,
+        createdBy = userId,
+        templateName = null,
+        baseTemplate = "default",
+        isTemplateInUse,
+    } = req.body;
+
+    if (!userId || typeof customizer !== "object") {
+        return res.status(400).json({ success: false, message: "Invalid input." });
     }
 
-    
-    const zaplinksRef = db.collection('linkPages');
-    const q = zaplinksRef.where('uid', '==', uid);
-    const snapshot = await q.get();
+    try {
+        let docRef;
+        let isNew = true;
 
-    const zaplinks = [];
+        if (templateId) {
+            docRef = db.collection("templates").doc(templateId);
+            const docSnap = await docRef.get();
+            isNew = !docSnap.exists;
+        } else {
+            docRef = db.collection("templates").doc();
+        }
 
-   
-    if (snapshot.empty) {
-      console.log('No matching zaplinks found for the user.');
-      return res.status(200).json({ success: true, message: 'No zaplinks found for this user.', data: [] });
+        await docRef.set(
+            {
+                userId,
+                customizer,
+                isPublic,
+                createdBy,
+                templateName,
+                baseTemplate,
+                isTemplateInUse,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                ...(isNew && {
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                }),
+            },
+            { merge: true }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: isNew ? "Template created successfully." : "Template updated successfully.",
+            templateId: docRef.id,
+        });
+    } catch (error) {
+        console.error("Error saving template:", error);
+        return res.status(500).json({ success: false, message: "Failed to save template." });
+    }
+};
+
+export const getAllUserTemplates = async (req, res) => {
+    const userId = req.user?.uid;
+
+    if (!userId) {
+        return res.status(400).json({ success: false, message: "User ID missing." });
     }
 
-    snapshot.forEach(doc => {
-      zaplinks.push({
-        id: doc.id, 
-        ...doc.data()
-      });
-    });
+    try {
+        const snapshot = await db
+            .collection("templates")
+            .where("userId", "==", userId)
+            .orderBy("updatedAt", "desc")
+            .get();
 
-    res.status(200).json({ success: true, message: 'Successfully retrieved user zaplinks.', data: zaplinks });
+        const templates = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+        }));
 
-  } catch (error) {
-    console.error('Error fetching user zaplinks:', error);
-    res.status(500).json({ success: false, message: 'Failed to retrieve user zaplinks.', error: error.message });
-  }
+        return res.status(200).json({ success: true, data: templates });
+    } catch (error) {
+        console.error("Error fetching templates:", error);
+        return res.status(500).json({ success: false, message: "Failed to fetch templates." });
+    }
+};
+
+
+export const getTemplateById = async (req, res) => {
+    const { templateId } = req.params;
+
+    if (!templateId) {
+        return res.status(400).json({ success: false, message: "Template ID missing." });
+    }
+
+    try {
+        const doc = await db.collection("templates").doc(templateId).get();
+
+        if (!doc.exists) {
+            return res.status(404).json({ success: false, message: "Template not found." });
+        }
+
+        return res.status(200).json({ success: true, data: { id: doc.id, ...doc.data() } });
+    } catch (error) {
+        console.error("Error fetching template:", error);
+        return res.status(500).json({ success: false, message: "Failed to fetch template." });
+    }
 };

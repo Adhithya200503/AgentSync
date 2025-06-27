@@ -13,19 +13,7 @@ const isValidUrl = (url) => {
   }
 };
 
-const normalizeHost = (host) => {
-  try {
-    const url = new URL(`http://${host}`);
-    let normalized = url.hostname;
-    if (normalized.startsWith('www.')) {
-      normalized = normalized.substring(4);
-    }
-    return normalized;
-  } catch (error) {
-    console.error("Error normalizing host:", host, error);
-    return host;
-  }
-};
+ 
 
 export const createShortUrl = async (req, res) => {
   const user = req.user;

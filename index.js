@@ -8,7 +8,7 @@ import ZurlRoutes from "./routes/zurlRoutes.js"
 import { session } from "telegraf";
 import { redirectShortUrl } from "./controller/zurlControllers.js";
 import ZapLinkRoutes from "./routes/ZapLinkRoutes.js"
-import { getLinkPageByUsername } from "./controller/zapLinkControllers.js";
+import { createOrUpdateTemplate, getLinkPageByUsername, getLinkPageByUsernameWithoutStats, getTemplateById } from "./controller/zapLinkControllers.js";
 import BioGramRoutes from "./routes/BioGram.js"
 import { getPortfolio } from "./controller/skillVaultController.js"
 import aiRoutes from "./routes/AIRoutes.js"
@@ -40,13 +40,13 @@ app.get("/", authenticateToken, (req, res) => {
 app.get("/portfolio/:portfolioId", getPortfolio);
 app.get("/Zurl/:shortId", redirectShortUrl);
 app.get('/link-page/:username', getLinkPageByUsername);
-
+app.get('/zaplink/:username/view-only', getLinkPageByUsernameWithoutStats);
 app.use("/whatsapp", authenticateToken, WhatsAppLinkRoutes)
 app.use("/zurl", authenticateToken, ZurlRoutes);
 app.use("/zapLink", authenticateToken, ZapLinkRoutes);
 app.use("/bio-gram", authenticateToken, BioGramRoutes)
 app.use("/ai", authenticateToken, aiRoutes);
 app.get("/:code", redirectLink);
+app.get("/zap-link/template/:templateId",getTemplateById);
 app.get("/biogram/:shortId", redirectShortUrl);
-
 app.listen(3000, () => console.log(`server running successfully on port ${PORT} `))
