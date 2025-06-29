@@ -550,62 +550,88 @@ export const deleteZapLink = async (req, res) => {
         res.status(500).json({ success: false, error: error.message || 'An unexpected error occurred.' });
     }
 };
-
+const DEFAULT_TEMPLATE_IDS = [
+  "vGiuqWWFVmulh7IJX0q6", // DEFAULT
+  "LeOo5qf0kLwsvahpci0y", // FROSTED GLASS
+  "4qZzlAbsE2hPA59BY02J", // BREEZE
+  "X9QeSmT5Ff97CGB763A2", // COLOR BURST
+  "RNvpeceto6xp6D0vGif5", // TERMINAL
+  "wDXdhe9mOLJiE2KtPRXq", // PASTEL
+  "UYedaoLp20Pc9DlsEvTg", // GAMER
+];
 
 export const createOrUpdateTemplate = async (req, res) => {
-    const userId = req.user?.uid;
-    const {
-        templateId = null,
-        customizer,
-        isPublic = false,
-        createdBy = userId,
-        templateName = null,
-        baseTemplate = "default",
-        isTemplateInUse,
-    } = req.body;
+  const userId = req.user?.uid;
+  const {
+    templateId = null,
+    customizer,
+    isPublic = false,
+    createdBy = userId,
+    templateName = null,
+    baseTemplate = "default",
+    isTemplateInUse,
+  } = req.body;
 
-    if (!userId || typeof customizer !== "object") {
-        return res.status(400).json({ success: false, message: "Invalid input." });
-    }
+  if (!userId || typeof customizer !== "object") {
+    return res.status(400).json({ success: false, message: "Invalid input." });
+  }
 
-    try {
-        let docRef;
-        let isNew = true;
+  try {
+    let docRef;
+    let isNew = true;
 
-        if (templateId) {
-            docRef = db.collection("templates").doc(templateId);
-            const docSnap = await docRef.get();
-            isNew = !docSnap.exists;
-        } else {
-            docRef = db.collection("templates").doc();
-        }
-
-        await docRef.set(
-            {
-                userId,
-                customizer,
-                isPublic,
-                createdBy,
-                templateName,
-                baseTemplate,
-                isTemplateInUse,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                ...(isNew && {
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                }),
-            },
-            { merge: true }
-        );
-
-        return res.status(200).json({
-            success: true,
-            message: isNew ? "Template created successfully." : "Template updated successfully.",
-            templateId: docRef.id,
+    if (templateId) {
+      if (DEFAULT_TEMPLATE_IDS.includes(templateId)) {
+        return res.status(403).json({
+          success: false,
+          message: "This is a default template and cannot be edited.",
         });
-    } catch (error) {
-        console.error("Error saving template:", error);
-        return res.status(500).json({ success: false, message: "Failed to save template." });
+      }
+
+      docRef = db.collection("templates").doc(templateId);
+      const docSnap = await docRef.get();
+
+      if (!docSnap.exists) {
+        return res.status(404).json({ success: false, message: "Template not found." });
+      }
+
+      const existingData = docSnap.data();
+ 
+      if (existingData.createdBy !== userId) {
+        return res.status(403).json({ success: false, message: "Unauthorized to edit this template." });
+      }
+
+      isNew = false;
+    } else {
+      docRef = db.collection("templates").doc();
     }
+
+    await docRef.set(
+      {
+        userId,
+        customizer,
+        isPublic,
+        createdBy: isNew ? userId : undefined,
+        templateName,
+        baseTemplate,
+        isTemplateInUse,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(isNew && {
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }),
+      },
+      { merge: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: isNew ? "Template created successfully." : "Template updated successfully.",
+      templateId: docRef.id,
+    });
+  } catch (error) {
+    console.error("Error saving template:", error);
+    return res.status(500).json({ success: false, message: "Failed to save template." });
+  }
 };
 
 export const getAllUserTemplates = async (req, res) => {
