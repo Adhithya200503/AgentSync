@@ -74,25 +74,51 @@ const deleteCloudinaryImage = async (publicId) => {
 
 export const createZapLink = async (req, res) => {
   try {
-    const uid = req.user.uid;
+    // Authenticated user ID from middleware
+    const uid = req.user.uid; 
+    
+    // Extract data from request body
     const { username, bio, template } = req.body;
 
-    let links = [];
-    if (req.body.links) {
-      try {
-        links = JSON.parse(req.body.links);
-      } catch (parseError) {
-        console.error('Error parsing links JSON:', parseError);
-        return res.status(400).json({ success: false, message: 'Invalid links data format.' });
-      }
-    }
+    // Files are available via req.files (assuming express-fileupload or similar middleware)
+    const profilePicFile = req.files?.profilePic;
 
+    // Initialize variables for profile picture
     let profilePicUrl = '';
     let profilePicPublicId = '';
-    const profilePicFile = req.files && req.files.profilePic;
 
+    // --- 1. Validate Username ---
+    if (!username || typeof username !== 'string' || username.trim() === '') {
+      return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
+    }
+    if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+      return res.status(400).json({ success: false, message: 'Username can only contain alphanumeric characters, underscores, hyphens, and periods.' });
+    }
+    if (username.length < 3 || username.length > 30) {
+      return res.status(400).json({ success: false, message: 'Username must be between 3 and 30 characters long.' });
+    }
+
+    // --- 2. Check Username Uniqueness ---
+    // This is crucial for creation to prevent overwriting existing pages
+    const linkPageRef = db.collection('linkPages').doc(username.trim());
+    const linkPageSnap = await linkPageRef.get();
+
+    if (linkPageSnap.exists) {
+      return res.status(409).json({ success: false, message: 'Username already taken. Please choose a different one.' });
+    }
+
+    // --- 3. Validate Bio ---
+    if (typeof bio !== 'string') {
+      return res.status(400).json({ success: false, message: 'Bio must be a string.' });
+    }
+    if (bio.length > 250) {
+      return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
+    }
+
+    // --- 4. Handle Profile Picture Upload (if provided) ---
     if (profilePicFile) {
       try {
+        // Basic validation for the file
         if (
           !profilePicFile.data ||
           !Buffer.isBuffer(profilePicFile.data) ||
@@ -107,8 +133,8 @@ export const createZapLink = async (req, res) => {
         const base64ProfilePic = `data:${profilePicFile.mimetype};base64,${base64Data}`;
 
         const result = await cloudinary.uploader.upload(base64ProfilePic, {
-          folder: 'zaplink/profile_pictures',
-          resource_type: 'auto',
+          folder: 'zaplink/profile_pictures', // Cloudinary folder
+          resource_type: 'auto', // Automatically detect file type
         });
 
         profilePicUrl = result.secure_url;
@@ -120,134 +146,130 @@ export const createZapLink = async (req, res) => {
       }
     }
 
-    if (!username || typeof username !== 'string' || username.trim() === '') {
-      return res.status(400).json({ success: false, message: 'Username is required and must be a non-empty string.' });
-    }
-    if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
-      return res.status(400).json({ success: false, message: 'Username can only contain alphanumeric characters, underscores, hyphens, and periods.' });
-    }
-    if (username.length < 3 || username.length > 30) {
-      return res.status(400).json({ success: false, message: 'Username must be between 3 and 30 characters long.' });
+    // --- 5. Handle Links ---
+    let links = [];
+    if (req.body.links) {
+      try {
+        links = JSON.parse(req.body.links);
+      } catch (parseError) {
+        console.error('Error parsing links JSON:', parseError);
+        return res.status(400).json({ success: false, message: 'Invalid links data format.' });
+      }
     }
 
-    if (typeof bio !== 'string') {
-      return res.status(400).json({ success: false, message: 'Bio must be a string.' });
-    }
-    if (bio.length > 250) {
-      return res.status(400).json({ success: false, message: 'Bio cannot exceed 250 characters.' });
+    if (!Array.isArray(links) || links.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one link is required.' });
     }
 
     const processedLinks = [];
     const urlRegex = /^(https?|mailto|tel|sms|whatsapp):\/\/[^\s$.?#].[^\s]*$/i;
 
-    if (Array.isArray(links)) {
-      for (const [index, link] of links.entries()) {
-        const linkPlatform = (typeof link.platform === 'string' && link.platform.trim() !== '')
-          ? link.platform.trim()
-          : PLATFORMS[0].name;
+    for (const [index, link] of links.entries()) {
+      // Default values if not provided or empty
+      const linkPlatform = (typeof link.platform === 'string' && link.platform.trim() !== '')
+        ? link.platform.trim()
+        : PLATFORMS[0].name; // Use first platform as default
 
-        const linkTitle = (typeof link.title === 'string' && link.title.trim() !== '')
-          ? link.title.trim()
-          : PLATFORMS.find(p => p.name === linkPlatform)?.name || 'Link';
+      const linkTitle = (typeof link.title === 'string' && link.title.trim() !== '')
+        ? link.title.trim()
+        : PLATFORMS.find(p => p.name === linkPlatform)?.name || 'Link'; // Default to platform name or 'Link'
 
-        const linkUrl = (typeof link.url === 'string' && link.url.trim() !== '')
-          ? link.url.trim()
-          : '';
+      const linkUrl = (typeof link.url === 'string' && link.url.trim() !== '')
+        ? link.url.trim()
+        : '';
 
-        const linkIcon = (typeof link.icon === 'string' && link.icon.trim() !== '')
-          ? link.icon.trim()
-          : linkPlatform.toLowerCase();
+      const linkIcon = (typeof link.icon === 'string' && link.icon.trim() !== '')
+        ? link.icon.trim()
+        : linkPlatform.toLowerCase();
 
-        // Add validation for link properties (url, title, icon)
-        if (!linkUrl) {
-          return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
-        }
-        if (!urlRegex.test(linkUrl) &&
+      // Link-specific validation
+      if (!linkUrl) {
+        return res.status(400).json({ success: false, message: `Link ${index + 1}: URL is required.` });
+      }
+      if (!urlRegex.test(linkUrl) &&
           !linkUrl.startsWith('mailto:') &&
           !linkUrl.startsWith('tel:') &&
           !linkUrl.startsWith('sms:') &&
           !linkUrl.startsWith('whatsapp:')) {
-          return res.status(400).json({
-            success: false,
-            message: `Link ${index + 1}: Invalid URL format. Must be a valid web URL, mailto:, tel:, sms:, or whatsapp:.`
-          });
-        }
-        if (!linkTitle) {
-          return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
-        }
-        if (!linkIcon) {
-          return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
-        }
-
-        let linkImageUrl = '';
-        let linkImagePublicId = '';
-        const customLinkImageFile = req.files && req.files[`linkImage_${index}`];
-
-        if (customLinkImageFile) {
-          try {
-            if (
-              !customLinkImageFile.data ||
-              !Buffer.isBuffer(customLinkImageFile.data) ||
-              !customLinkImageFile.mimetype ||
-              customLinkImageFile.data.length === 0
-            ) {
-              console.error(`Validation failed for link image file at index ${index}.`);
-              return res.status(400).json({ success: false, message: `Invalid or empty image for link ${index + 1}.` });
-            }
-
-            const base64Image = customLinkImageFile.data.toString('base64');
-            const base64CustomLinkImage = `data:${customLinkImageFile.mimetype};base64,${base64Image}`;
-
-            const result = await cloudinary.uploader.upload(base64CustomLinkImage, {
-              folder: 'zaplink/link_images',
-              resource_type: 'auto',
-            });
-            linkImageUrl = result.secure_url;
-            linkImagePublicId = result.public_id;
-          } catch (uploadError) {
-            console.error(`Cloudinary link image upload error for link ${index + 1}:`, uploadError);
-          }
-        }
-
-        processedLinks.push({
-          id: link.id || uuidv4(), // <-- FIX: Ensure ID is always defined
-          title: linkTitle,
-          url: linkUrl,
-          type: linkPlatform,
-          icon: linkIcon,
-          linkImage: linkImageUrl,
-          linkImagePublicId: linkImagePublicId
+        return res.status(400).json({
+          success: false,
+          message: `Link ${index + 1}: Invalid URL format. Must be a valid web URL, mailto:, tel:, sms:, or whatsapp:.`
         });
       }
-    } else {
-      return res.status(400).json({ success: false, message: 'At least one link is required.' });
+      if (!linkTitle) {
+        return res.status(400).json({ success: false, message: `Link ${index + 1}: Title is required.` });
+      }
+      if (!linkIcon) {
+        return res.status(400).json({ success: false, message: `Link ${index + 1}: Icon is required.` });
+      }
+
+      let linkImageUrl = '';
+      let linkImagePublicId = '';
+      const customLinkImageFile = req.files?.[`linkImage_${index}`]; // Access by dynamic name
+
+      if (customLinkImageFile) {
+        try {
+          if (
+            !customLinkImageFile.data ||
+            !Buffer.isBuffer(customLinkImageFile.data) ||
+            !customLinkImageFile.mimetype ||
+            customLinkImageFile.data.length === 0
+          ) {
+            console.error(`Validation failed for link image file at index ${index}.`);
+            return res.status(400).json({ success: false, message: `Invalid or empty image for link ${index + 1}.` });
+          }
+
+          const base64Image = customLinkImageFile.data.toString('base64');
+          const base64CustomLinkImage = `data:${customLinkImageFile.mimetype};base64,${base64Image}`;
+
+          const result = await cloudinary.uploader.upload(base64CustomLinkImage, {
+            folder: 'zaplink/link_images', // Cloudinary folder for link images
+            resource_type: 'auto',
+          });
+          linkImageUrl = result.secure_url;
+          linkImagePublicId = result.public_id;
+        } catch (uploadError) {
+          console.error(`Cloudinary link image upload error for link ${index + 1}:`, uploadError);
+          // Decide if you want to fail the whole request or just log and continue without the image
+          return res.status(500).json({ success: false, message: `Failed to upload image for link ${index + 1}.` });
+        }
+      }
+
+      processedLinks.push({
+        id: uuidv4(), // Generate a new unique ID for each link
+        title: linkTitle,
+        url: linkUrl,
+        type: linkPlatform,
+        icon: linkIcon,
+        linkImage: linkImageUrl,
+        linkImagePublicId: linkImagePublicId,
+      });
     }
 
+    // --- 6. Construct the new Zap Link page data ---
     const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://agentsync-5ab53.web.app';
-    const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username}`;
+    const linkPageUrl = `${FRONTEND_BASE_URL}/zaplink/${username.trim()}`;
 
-    const linkPageRef = db.collection('linkPages').doc(username);
-    const linkPageSnap = await linkPageRef.get();
-
-    if (linkPageSnap.exists) {
-      return res.status(409).json({ success: false, message: 'Username already taken. Please choose a different one.' });
-    }
-
-    await linkPageRef.set({
-      uid,
+    const newLinkPageData = {
+      uid, // User ID
       username: username.trim(),
       bio: bio ? bio.trim() : '',
       profilePicUrl,
       profilePicPublicId,
       links: processedLinks,
-      pageClicks: 0,
+      pageClicks: 0, // Initialize click count for a new page
       createdAt: new Date(),
       updatedAt: new Date(),
       linkPageUrl,
-      template: template || 'default'
-    });
+      template: template || 'default' // Default template if not provided
+    };
 
+    // --- 7. Save the new Zap Link page to Firestore ---
+    await linkPageRef.set(newLinkPageData);
+
+    // --- 8. Send Success Response ---
     res.status(200).json({ success: true, message: 'Zap link created successfully.', linkPageUrl });
+
   } catch (error) {
     console.error('Error in createZapLink (general catch):', error);
     res.status(500).json({ success: false, error: error.message || 'An unexpected error occurred.' });
