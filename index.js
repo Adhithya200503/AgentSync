@@ -27,7 +27,7 @@ app.use(cors({
 app.use(fileUpload({
   createParentPath: true,
   limits: { fileSize: 50 * 1024 * 1024 },
-  useTempFiles: false,
+  useTempFiles: true,
   tempFileDir: '/tmp/',
 }));
 app.use(express.json());
