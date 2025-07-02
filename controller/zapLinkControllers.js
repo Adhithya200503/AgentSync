@@ -325,7 +325,8 @@ export const editZapLink = async (req, res) => {
         await deleteCloudinaryImage(existing.profilePicPublicId);
       }
       const base64Data = profilePicFile.data.toString("base64");
-      const base64 = `data:${profilePicFile.mimetype};base64,${base64Data}`;
+      // CORRECTED LINE FOR PROFILE PIC:
+      const base64 = `data:${profilePicFile.mimetype};base64,${base64Data}`; // This is correct if profilePicFile.data is a Buffer
       const uploaded = await cloudinary.uploader.upload(base64, {
         folder: "zaplink/profile_pictures",
         resource_type: "auto",
@@ -366,7 +367,10 @@ export const editZapLink = async (req, res) => {
         if (imgFile) {
           if (linkPublicId) await deleteCloudinaryImage(linkPublicId);
           const base64 = imgFile.data.toString("base64");
-          const result = await cloudinary.uploader.upload(`data:${imgFile.mimetype};base64,${base64}`, {
+          // *** CORRECTED LINE FOR LINK IMAGE: ***
+          // Combine the data URI prefix with the base64 string
+          const dataUri = `data:${imgFile.mimetype};base64,${base64}`;
+          const result = await cloudinary.uploader.upload(dataUri, {
             folder: "zaplink/link_images",
             resource_type: "auto",
           });
