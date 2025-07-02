@@ -273,143 +273,262 @@ export const createZapLink = async (req, res) => {
 };
 
 export const editZapLink = async (req, res) => {
+  // Helper function to delete images/videos from Cloudinary
   const deleteCloudinaryImage = async (publicId) => {
     if (publicId) {
       try {
         await cloudinary.uploader.destroy(publicId);
-        console.log("Deleted image:", publicId);
+        console.log("Cloudinary: Successfully deleted asset with publicId:", publicId);
       } catch (err) {
-        console.error("Cloudinary deletion error:", publicId, err);
+        console.error("Cloudinary: Error deleting asset with publicId:", publicId, err);
+        // It's often good practice to log, but not necessarily fail the entire request
+        // if deleting an old asset fails, as the new asset might still be uploaded successfully.
       }
     }
   };
 
   try {
+    // Extract user ID from the request (assuming authentication middleware populates req.user)
     const uid = req.user.uid;
-    const { username } = req.params;
-    const { bio, template } = req.body;
+    const { username } = req.params; // Get username from URL parameters
+    const { bio, template } = req.body; // Get bio and template from request body
+
+    // Access uploaded files via req.files (provided by express-fileupload)
     const profilePicFile = req.files?.profilePic;
+    // req.body.removeProfilePic will be a string "true" or "false" if sent from FormData
     const removeProfilePic = req.body.removeProfilePic === "true";
 
+    console.log("--- editZapLink Request Start ---");
+    console.log("Request User UID:", uid);
+    console.log("Target Username:", username);
+    console.log("Request Body (bio, template, removeProfilePic):", { bio, template, removeProfilePic });
+    console.log("Request Files (profilePic, linkImages):", req.files); // Shows all files received
+
+    // Basic validation for username
     if (!username || typeof username !== "string" || username.trim() === "") {
+      console.error("Validation Error: Username is required in path.");
       return res.status(400).json({ success: false, message: "Username is required in path." });
     }
 
+    // Reference to the Firestore document for the link page
     const pageRef = db.collection("linkPages").doc(username);
-    const snap = await pageRef.get();
+    const snap = await pageRef.get(); // Fetch the current state of the document
 
+    // Check if the page exists
     if (!snap.exists) {
+      console.error(`Firestore Error: Page with username '${username}' not found.`);
       return res.status(404).json({ success: false, message: "Page not found." });
     }
 
-    const existing = snap.data();
+    const existing = snap.data(); // Get existing data
+    console.log("Existing page data (uid, profilePicPublicId, links count):", {
+      uid: existing.uid,
+      profilePicPublicId: existing.profilePicPublicId,
+      linksCount: existing.links ? existing.links.length : 0
+    });
+
+    // Authorization check: ensure the current user owns this page
     if (existing.uid !== uid) {
+      console.error("Authorization Error: User UID mismatch. Existing:", existing.uid, "Requested:", uid);
       return res.status(403).json({ success: false, message: "Unauthorized." });
     }
 
-    const updateData = { updatedAt: new Date() };
+    const updateData = { updatedAt: new Date() }; // Object to hold updates for Firestore
 
+    // Update bio if provided and valid
     if (typeof bio === "string") {
       if (bio.length > 250) {
+        console.error("Validation Error: Bio too long (max 250 chars).");
         return res.status(400).json({ success: false, message: "Bio too long." });
       }
       updateData.bio = bio.trim();
+      console.log("Updating bio to:", updateData.bio);
     }
 
+    // Update template if provided
     if (template !== undefined) {
       updateData.template = template;
+      console.log("Updating template to:", updateData.template);
     }
 
+    // --- Handle Profile Picture Update ---
     if (profilePicFile) {
+      console.log("Profile picture file detected in request.");
+      console.log(`Profile Pic File Details: name=${profilePicFile.name}, mimetype=${profilePicFile.mimetype}, size=${profilePicFile.size} bytes`);
+
+      // Ensure that a temporary file path is available (it should be with useTempFiles: true)
+      if (!profilePicFile.tempFilePath) {
+        console.error("Upload Error: Profile picture file has no temporary path. Cannot upload.");
+        return res.status(500).json({ success: false, message: "Failed to process profile picture file." });
+      }
+
+      // If an old profile pic exists, delete it from Cloudinary
       if (existing.profilePicPublicId) {
+        console.log("Existing profile picture found. Attempting to delete old image:", existing.profilePicPublicId);
         await deleteCloudinaryImage(existing.profilePicPublicId);
       }
-      const base64Data = profilePicFile.data.toString("base64");
-      // CORRECTED LINE FOR PROFILE PIC:
-      const base64 = `data:${profilePicFile.mimetype};base64,${base64Data}`; // This is correct if profilePicFile.data is a Buffer
-      const uploaded = await cloudinary.uploader.upload(base64, {
+
+      // Upload the new profile picture using its temporary file path
+      console.log(`Uploading new profile pic from tempFilePath: ${profilePicFile.tempFilePath}`);
+      const uploaded = await cloudinary.uploader.upload(profilePicFile.tempFilePath, {
         folder: "zaplink/profile_pictures",
-        resource_type: "auto",
+        resource_type: "auto", // Automatically detect file type (image/png, image/jpeg, etc.)
       });
       updateData.profilePicUrl = uploaded.secure_url;
       updateData.profilePicPublicId = uploaded.public_id;
+      console.log("Profile picture uploaded successfully. URL:", updateData.profilePicUrl);
+
     } else if (removeProfilePic) {
+      console.log("Request to remove profile picture detected.");
+      // If remove flag is true and an old pic exists, delete it from Cloudinary
       if (existing.profilePicPublicId) {
+        console.log("Existing profile picture found. Attempting to delete old image:", existing.profilePicPublicId);
         await deleteCloudinaryImage(existing.profilePicPublicId);
       }
+      // Clear profile pic fields in Firestore
       updateData.profilePicUrl = "";
       updateData.profilePicPublicId = "";
+      console.log("Profile picture fields cleared in database.");
     }
 
-    // Handle links only if explicitly sent
+    // --- Handle Links Update ---
+    // Only process links if the 'links' field is explicitly sent in the request body
     if (req.body.links !== undefined) {
       let links;
       try {
-        links = JSON.parse(req.body.links);
+        links = JSON.parse(req.body.links); // Parse the JSON string of links
+        console.log(`Parsed ${links.length} links from request body.`);
       } catch (e) {
-        return res.status(400).json({ success: false, message: "Invalid links format." });
+        console.error("Validation Error: Invalid links format. Must be a JSON string.", e);
+        return res.status(400).json({ success: false, message: "Invalid links format (must be a JSON string)." });
       }
 
+      // Create a map of existing links for efficient lookup and tracking for deletion
       const existingLinkMap = new Map((existing.links || []).map(l => [l.id, l]));
-      const processedLinks = [];
+      const processedLinks = []; // Array to store the updated/new links that will be saved
 
       for (const [index, link] of links.entries()) {
+        // Destructure link properties, providing default values for 'type'
         const { id, title, url, type = "Website", icon, linkImagePublicId } = link;
-        if (!url || typeof url !== "string") {
+
+        console.log(`\n--- Processing Link ${index} (ID: ${id || 'New Link'}) ---`);
+        console.log(`Link Data: Title: "${title}", URL: "${url}", Type: "${type}"`);
+        console.log(`Frontend sent linkImagePublicId: ${linkImagePublicId}`);
+
+
+        // Basic validation for link URL
+        if (!url || typeof url !== "string" || url.trim() === "") {
+          console.error(`Validation Error: Link ${index + 1} (ID: ${id || 'New'}) missing URL.`);
           return res.status(400).json({ success: false, message: `Link ${index + 1} missing URL.` });
         }
-        const prev = existingLinkMap.get(id);
 
-        let linkImage = prev?.linkImage || "";
-        let linkPublicId = prev?.linkImagePublicId || "";
+        const prev = existingLinkMap.get(id); // Get the previous state of this link from Firestore
+        let currentLinkImage = prev?.linkImage || ""; // Initialize with existing image URL
+        let currentLinkPublicId = prev?.linkImagePublicId || ""; // Initialize with existing public ID
 
-        const imgFile = req.files?.[`linkImage_${index}`];
+        const imgFile = req.files?.[`linkImage_${index}`]; // Check for a specific image file for this link (e.g., linkImage_0, linkImage_1)
+
         if (imgFile) {
-          if (linkPublicId) await deleteCloudinaryImage(linkPublicId);
-          const base64 = imgFile.data.toString("base64");
-          // *** CORRECTED LINE FOR LINK IMAGE: ***
-          // Combine the data URI prefix with the base64 string
-          const dataUri = `data:${imgFile.mimetype};base64,${base64}`;
-          const result = await cloudinary.uploader.upload(dataUri, {
-            folder: "zaplink/link_images",
-            resource_type: "auto",
-          });
-          linkImage = result.secure_url;
-          linkPublicId = result.public_id;
-        } else if (linkImagePublicId === "REMOVE") {
-          if (linkPublicId) await deleteCloudinaryImage(linkPublicId);
-          linkImage = "";
-          linkPublicId = "";
-        }
+          console.log(`Image file detected for link ${index}.`);
+          console.log(`Link Image File Details: name=${imgFile.name}, mimetype=${imgFile.mimetype}, size=${imgFile.size} bytes`);
+          console.log(`Link Image Temp File Path: ${imgFile.tempFilePath}`);
 
+          // Ensure that a temporary file path is available
+          if (!imgFile.tempFilePath) {
+            console.error(`Upload Error: Link image ${index} file has no temporary path. Cannot upload.`);
+            // If we can't get the temp path, we treat this as no new image for this link,
+            // and fall back to existing or empty image details.
+            currentLinkImage = prev?.linkImage || ""; // Keep previous if it exists
+            currentLinkPublicId = prev?.linkImagePublicId || "";
+          } else {
+            // If an old image exists for this link, delete it from Cloudinary
+            if (currentLinkPublicId) {
+              console.log(`Existing image for link ${index} found. Attempting to delete old image: ${currentLinkPublicId}`);
+              await deleteCloudinaryImage(currentLinkPublicId);
+            }
+
+            // Upload the new image for the link using its temporary file path
+            console.log(`Uploading new image for link ${index} from tempFilePath: ${imgFile.tempFilePath}`);
+            const result = await cloudinary.uploader.upload(imgFile.tempFilePath, {
+              folder: "zaplink/link_images",
+              resource_type: "auto",
+            });
+            currentLinkImage = result.secure_url;
+            currentLinkPublicId = result.public_id;
+            console.log(`Cloudinary upload successful for link ${index}. URL: ${currentLinkImage}`);
+          }
+        } else if (linkImagePublicId === "REMOVE") {
+          console.log(`Request to remove image for link ${index} detected by "REMOVE" flag.`);
+          // If the frontend explicitly sent "REMOVE" for the publicId in the link object
+          if (currentLinkPublicId) {
+            console.log(`Existing image for link ${index} found. Attempting to delete old image: ${currentLinkPublicId}`);
+            await deleteCloudinaryImage(currentLinkPublicId);
+          }
+          currentLinkImage = ""; // Clear image URL
+          currentLinkPublicId = ""; // Clear public ID
+          console.log(`Image for link ${index} removed from database fields.`);
+        }
+        // Else (no new file, and linkImagePublicId is NOT "REMOVE"), keep existing image data if any.
+        // This is implicitly handled by `currentLinkImage` and `currentLinkPublicId` initialized from `prev`.
+
+        // Add the processed link to the array
         processedLinks.push({
-          id: id || uuidv4(),
-          title: title?.trim() || "Link",
-          url: url.trim(),
-          type,
-          icon: icon || type.toLowerCase(),
-          linkImage,
-          linkImagePublicId: linkPublicId,
+          id: id || uuidv4(), // Use existing ID if provided, otherwise generate a new one for new links
+          title: title?.trim() || "Link", // Trim title or default to "Link"
+          url: url.trim(), // Trim URL
+          type: type, // Keep the link type
+          icon: icon || type.toLowerCase(), // Use provided icon or default based on type
+          linkImage: currentLinkImage, // Updated or existing image URL
+          linkImagePublicId: currentLinkPublicId, // Updated or existing public ID
         });
       }
 
-      updateData.links = processedLinks;
+      updateData.links = processedLinks; // Assign the processed links array to updateData
+      console.log(`Final processed links array count for update: ${processedLinks.length}`);
 
-      const removedIds = Array.from(existingLinkMap.keys()).filter(id => !links.some(l => l.id === id));
-      for (const id of removedIds) {
-        const old = existingLinkMap.get(id);
-        if (old?.linkImagePublicId) {
-          await deleteCloudinaryImage(old.linkImagePublicId);
+      // Identify and delete images for links that were entirely removed from the new links array
+      const removedIds = Array.from(existingLinkMap.keys()).filter(id =>
+        !links.some(l => l.id === id) // Check if an existing link's ID is NOT present in the new links array
+      );
+      if (removedIds.length > 0) {
+        console.log("Detected link IDs that were fully removed from the page:", removedIds);
+        for (const id of removedIds) {
+          const old = existingLinkMap.get(id); // Get the data of the removed link
+          if (old?.linkImagePublicId) { // If it had an associated image
+            console.log(`Deleting image for fully removed link (ID: ${id}): ${old.linkImagePublicId}`);
+            await deleteCloudinaryImage(old.linkImagePublicId);
+          }
         }
+      } else {
+        console.log("No links were fully removed from the page.");
       }
+    } else {
+        console.log("No 'links' array was provided in the request body. Skipping links update.");
     }
 
+    // Perform the Firestore update operation with all accumulated changes
     await pageRef.update(updateData);
+    console.log("Firestore: Page document updated successfully.");
+
+    // Construct the full URL to the updated link page for the response
     const link = `${process.env.FRONTEND_BASE_URL || "https://yourapp.com"}/zaplink/${username}`;
+    console.log("Response: Page updated successfully. Link URL:", link);
     return res.status(200).json({ success: true, message: "Page updated.", linkPageUrl: link });
+
   } catch (err) {
-    console.error("editZapLink error:", err);
-    return res.status(500).json({ success: false, error: err.message || "Unexpected error" });
+    console.error("editZapLink Caught Unexpected Error:", err); // Log the full error object for debugging
+
+    // Provide more user-friendly messages for common errors if possible
+    const errorMessage = err.message || "An unexpected error occurred during page update.";
+    // Example: if you want to differentiate Cloudinary errors
+    if (err.http_code && err.http_code >= 400 && err.http_code < 500) {
+        return res.status(400).json({ success: false, error: `Cloudinary error: ${errorMessage}` });
+    } else if (err.name === 'FirebaseError') {
+        return res.status(500).json({ success: false, error: `Database error: ${errorMessage}` });
+    }
+    return res.status(500).json({ success: false, error: errorMessage });
+  } finally {
+      console.log("--- editZapLink Request End ---\n"); // Mark the end of the request processing
   }
 };
 
