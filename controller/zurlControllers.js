@@ -116,6 +116,112 @@ export const createShortUrl = async (req, res) => {
   }
 };
 
+export const createShortUrlWithUidParam = async (req, res) => {
+  const { uid } = req.params;
+
+  const {
+    originalUrl,
+    customUrl,
+    protected: isProtected,
+    zaplinkIds,
+    name,
+    folderId,
+    isBioGramLink,
+  } = req.body;
+
+  if (!originalUrl || !isValidUrl(originalUrl)) {
+    return res.status(400).json({ error: 'Invalid or missing originalUrl' });
+  }
+
+  if (!uid) {
+    return res.status(400).json({ error: 'Missing uid in params' });
+  }
+
+  const slug = customUrl?.trim() || uuidv4().slice(0, 8);
+
+  const shortLinksCollection = db.collection('short-links');
+  const docRef = shortLinksCollection.doc(slug);
+  const doc = await docRef.get();
+
+  if (doc.exists) {
+    return res.status(409).json({ error: 'Custom URL (slug) already in use' });
+  }
+
+  const appBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+  const shortUrlBase = isBioGramLink ? `${appBaseUrl}/biogram` : `${appBaseUrl}/Zurl`;
+  const shortUrl = `${shortUrlBase}/${slug}`;
+
+  let qrCodeDataURL;
+  try {
+    qrCodeDataURL = await QRCode.toDataURL(originalUrl);
+  } catch (qrError) {
+    console.error("Error generating QR code:", qrError);
+    return res.status(500).json({ error: 'Failed to generate QR code' });
+  }
+
+  const shortUrlData = {
+    shortUrl,
+    shortId: slug,
+    originalUrl,
+    userId: uid,
+    qrcode: qrCodeDataURL,
+    clicks: 0,
+    createdAt: Timestamp.now(),
+    isActive: true,
+    protected: isProtected || false,
+    unLockId: isProtected ? uuidv4() : null,
+    stats: {},
+    deviceStats: {},
+    browserStats: {},
+    osStats: {},
+    folderId: folderId || null,
+    name: name || null,
+  };
+
+  try {
+    await docRef.set(shortUrlData);
+
+    if (zaplinkIds && Array.isArray(zaplinkIds) && zaplinkIds.length > 0) {
+      const linkPagesCollection = db.collection('linkPages');
+      for (const zaplinkId of zaplinkIds) {
+        const zaplinkDocRef = linkPagesCollection.doc(zaplinkId);
+        try {
+          const zaplinkDoc = await zaplinkDocRef.get();
+          if (zaplinkDoc.exists) {
+            const newZaplinkEntry = {
+              icon: "link",
+              title: name || shortUrl,
+              type: "Custom",
+              url: shortUrl,
+            };
+
+            await zaplinkDocRef.update({
+              links: FieldValue.arrayUnion(newZaplinkEntry),
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+            console.log(`Short URL added to Zaplink: ${zaplinkId}`);
+          } else {
+            console.warn(`Zaplink document with ID ${zaplinkId} not found.`);
+          }
+        } catch (updateError) {
+          console.error(`Error updating Zaplink ${zaplinkId}:`, updateError);
+        }
+      }
+    }
+
+    return res.status(201).json({
+      shortId: slug,
+      shortUrl,
+      qrcode: qrCodeDataURL,
+      unLockId: isProtected ? shortUrlData.unLockId : undefined,
+      name: shortUrlData.name,
+    });
+  } catch (dbError) {
+    console.error("Error saving short link or updating Zaplinks:", dbError);
+    return res.status(500).json({ error: 'Failed to create short URL or update Zaplinks' });
+  }
+};
+
 export const redirectShortUrl = async (req, res) => {
   const { shortId } = req.params;
 
