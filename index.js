@@ -42,11 +42,11 @@ app.get("/Zurl/:shortId", redirectShortUrl);
 app.get('/link-page/:username', getLinkPageByUsername);
 app.get('/zaplink/:username/view-only', getLinkPageByUsernameWithoutStats);
 app.use("/whatsapp", authenticateToken, WhatsAppLinkRoutes)
-app.use("/zurl", authenticateToken, ZurlRoutes);
+app.use("/zurl", ZurlRoutes);
 app.use("/zapLink", authenticateToken, ZapLinkRoutes);
 app.use("/bio-gram", authenticateToken, BioGramRoutes)
 app.use("/ai", authenticateToken, aiRoutes);
 app.get("/:code", redirectLink);
-app.get("/zap-link/template/:templateId",getTemplateById);
+app.get("/zap-link/template/:templateId", getTemplateById);
 app.get("/biogram/:shortId", redirectShortUrl);
 app.listen(3000, () => console.log(`server running successfully on port ${PORT} `))
