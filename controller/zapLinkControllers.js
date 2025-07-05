@@ -239,6 +239,7 @@ export const createZapLink = async (req, res) => {
                 icon: linkIcon,
                 linkImage: linkImageUrl,
                 linkImagePublicId: linkImagePublicId,
+                isActive:true
             });
         }
 
