@@ -251,7 +251,7 @@ export const redirectShortUrl = async (req, res) => {
   }
 
   if (data.protected) {
-    const protectedRedirectBase = `${req.protocol}://${req.get('host')}/Zurl/unlock`;
+    const protectedRedirectBase = `https://agentsync-5ab53.web.app/Zurl/unlock/${shortId}`;
     return res.redirect(`${protectedRedirectBase}/${shortId}`);
   }
 
