@@ -67,7 +67,7 @@ export const createPortFolio = async (req, res) => {
 
     try {
       const shortUrlRes = await axios.post(
-        "https://agentsync.onrender.com/zurl/create-short-url",
+        "http://bio.vizhva.com/zurl/create-short-url",
         {
           originalUrl: url,
           customUrl:docRef.id,
